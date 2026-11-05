@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   Bot, Plus, House, Sparkles, MessageCircle,
   Download, ArrowLeft, ArrowRight, Settings2,
-  Trash2, Wifi, Laptop, Check, Send, Pencil
+  Trash2, Wifi, Laptop, Check, Send, Pencil, Eye, EyeOff
 } from "lucide-react";
 type Agent = { id:string; name:string; purpose:string; tone:string; instructions:string; createdAt:string };
 type Screen = "home"|"choose"|"guided"|"manual"|"review"|"chat"|"export"|"connection";
@@ -30,13 +30,22 @@ export default function Home() {
  const [isSending, setIsSending] = useState(false);
  const [endpoint,setEndpoint]=useState("");
  const [token,setToken]=useState("");
+ const [geminiApiKey, setGeminiApiKey] = useState("");
+ const [showApiKey, setShowApiKey] = useState(false);
  const [connectionStatus,setConnectionStatus]=useState("");
  const [hydrated,setHydrated]=useState(false);
  useEffect(()=>{try {setAgents(JSON.parse(localStorage.getItem("agentlab-agents")||"[]"));}catch{} setHydrated(true)},[]);
  useEffect(()=>{if(hydrated)localStorage.setItem("agentlab-agents",JSON.stringify(agents))},[agents,hydrated]);
  const active=agents.find(a=>a.id===selected);
- function start(mode:"guided"|"manual"){setDraft({...initial});setStep(0);setAnswer("");setScreen(mode)}
- function nextGuided(){
+  function start(mode: "guided" | "manual") {
+    setDraft({ ...initial });
+    setStep(0);
+    setAnswer("");
+    setGeminiApiKey("");
+    setShowApiKey(false);
+    setScreen(mode);
+  } 
+  function nextGuided(){
   const value=answer.trim();
   if(!value)return;
   if(step===0)setDraft(d=>({...d,purpose:value}));
@@ -88,6 +97,7 @@ async function sendMessage() {
         },
         message: text,
         history,
+        gemini_api_key: geminiApiKey.trim() || null,
       }),
     });
 
@@ -148,7 +158,37 @@ async function sendMessage() {
    {screen==="choose"&&<div className="narrow"><button className="back" onClick={()=>setScreen("home")}><ArrowLeft size={17}/> Voltar</button><div className="eyebrow">CRIAR AGENTE</div><h1>Como vamos começar?</h1><p className="lead">Escolha a maneira mais confortável de construir seu assistente.</p><div className="choice-grid"><button className="choice" onClick={()=>start("guided")}><div className="choice-icon"><MessageCircle/></div><span className="badge">RECOMENDADO</span><h3>Criação guiada</h3><p>Responda algumas perguntas e nós montamos as instruções do seu agente.</p><strong>Começar <ArrowRight size={16}/></strong></button><button className="choice" onClick={()=>start("manual")}><div className="choice-icon"><Settings2/></div><h3>Configuração manual</h3><p>Defina nome, objetivo, estilo e instruções diretamente.</p><strong>Configurar <ArrowRight size={16}/></strong></button></div></div>}
    {screen==="guided"&&<div className="narrow"><button className="back" onClick={()=>setScreen("choose")}><ArrowLeft size={17}/> Voltar</button><div className="step-row"><span>CRIANDO SEU AGENTE</span><span>Etapa {step+1} de 3</span></div><div className="progress"><span style={{width:`${(step+1)/3*100}%`}}/></div><div className="guide-bot"><Bot size={30}/></div><h1>{prompts[step]}</h1><p className="lead">{hints[step]}</p>{step===0&&<div className="suggestions">{purposes.map(p=><button key={p} onClick={()=>setAnswer(p)} className={answer===p?"selected":""}>{p}</button>)}</div>}{step===2&&<div className="suggestions">{tones.map(t=><button key={t} onClick={()=>setAnswer(t)} className={answer===t?"selected":""}>{t}</button>)}</div>}<label className="field-label" htmlFor="guided-answer">Sua resposta</label><input id="guided-answer" value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>e.key==="Enter"&&nextGuided()} placeholder="Digite sua resposta..."/><button className="primary full" disabled={!answer.trim()} onClick={nextGuided}>Continuar <ArrowRight size={17}/></button></div>}
    {screen==="manual"&&<div className="narrow"><button className="back" onClick={()=>setScreen("choose")}><ArrowLeft size={17}/> Voltar</button><div className="eyebrow">CONFIGURAÇÃO MANUAL</div><h1>Personalize seu agente</h1><p className="lead">Defina como seu agente deve agir e responder.</p><div className="form-card"><label>Nome do agente<input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="Ex.: Analista Inteligente"/></label><label>Objetivo principal<input value={draft.purpose} onChange={e=>setDraft({...draft,purpose:e.target.value})} placeholder="Ex.: Analisar relatórios"/></label><label>Tom de voz<select value={draft.tone} onChange={e=>setDraft({...draft,tone:e.target.value})}>{tones.map(t=><option key={t}>{t}</option>)}</select></label><label>Instruções adicionais (opcional)<textarea rows={5} value={draft.instructions} onChange={e=>setDraft({...draft,instructions:e.target.value})} placeholder="Você é um agente que..."/></label></div><button className="primary full" disabled={!draft.name.trim()||!draft.purpose.trim()} onClick={()=>setScreen("review")}>Revisar agente <ArrowRight size={17}/></button></div>}
-   {screen==="review"&&<div className="narrow"><button className="back" onClick={()=>setScreen("guided")}><ArrowLeft size={17}/> Voltar</button><div className="eyebrow">QUASE LÁ</div><h1>Seu agente está tomando forma ✨</h1><p className="lead">Confira as instruções antes de começar a conversar.</p><div className="review-card"><div className="review-head"><div className="agent-avatar"><Bot/></div><div><h3>{draft.name}</h3><p>{draft.purpose}</p></div></div><label>Instruções do agente<textarea rows={11} value={draft.instructions||makeInstructions(draft)} onChange={e=>setDraft({...draft,instructions:e.target.value})}/></label></div><button className="primary full" onClick={saveAgent}><Check size={18}/> Criar e testar agente</button></div>}
+   {screen==="review"&&<div className="narrow"><button className="back" onClick={()=>setScreen("guided")}><ArrowLeft size={17}/> Voltar</button><div className="eyebrow">QUASE LÁ</div><h1>Seu agente está tomando forma ✨</h1><p className="lead">Confira as instruções antes de começar a conversar.</p><div className="review-card"><div className="review-head"><div className="agent-avatar"><Bot/></div><div><h3>{draft.name}</h3><p>{draft.purpose}</p></div></div><label>Instruções do agente<textarea rows={11} value={draft.instructions||makeInstructions(draft)} onChange={e=>setDraft({...draft,instructions:e.target.value})}/></label></div><div className="form-card">
+  <label htmlFor="gemini-api-key">
+    Chave de API do Gemini (opcional)
+  </label>
+
+  <div className="api-key-field">
+    <input
+      id="gemini-api-key"
+      type={showApiKey ? "text" : "password"}
+      value={geminiApiKey}
+      onChange={(e) => setGeminiApiKey(e.target.value)}
+      placeholder="Cole sua chave de API do Gemini"
+      autoComplete="off"
+    />
+
+    <button
+      type="button"
+      className="icon-button"
+      onClick={() => setShowApiKey((prev) => !prev)}
+      aria-label={showApiKey ? "Ocultar chave" : "Mostrar chave"}
+    >
+      {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+    </button>
+  </div>
+
+  <p className="lead">
+    A chave será utilizada para gerar respostas com sua conta Gemini.
+    Ela não será salva junto ao agente nem incluída na exportação.
+    Se deixar em branco, será utilizada a chave configurada no backend.
+  </p>
+</div><button className="primary full" onClick={saveAgent}><Check size={18}/> Criar e testar agente</button></div>}
 
 {screen === "chat" && active && (
   <div className="chat-layout">

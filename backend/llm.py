@@ -14,10 +14,14 @@ from config import (
 
 class Gerador:
 
-    def __init__(self, usar_lora: bool = True):
-
+    def __init__(
+        self,
+        usar_lora: bool = True,
+        api_key: str | None = None,
+    ):
         self.provedor = LLM_PROVIDER
         self.com_lora = False
+        self.api_key = api_key
 
         if self.provedor == "llama":
             self._inicializar_llama(usar_lora)
@@ -93,14 +97,14 @@ class Gerador:
 
         from google import genai
 
-        if not GEMINI_API_KEY:
+        chave = self.api_key or GEMINI_API_KEY
+
+        if not chave:
             raise ValueError(
-                "GEMINI_API_KEY não encontrada no arquivo .env."
+                "Informe uma chave de API do Gemini."
             )
 
-        self.client = genai.Client(
-            api_key=GEMINI_API_KEY
-        )
+        self.client = genai.Client(api_key=chave)
 
         self.modelo = GEMINI_MODEL
 

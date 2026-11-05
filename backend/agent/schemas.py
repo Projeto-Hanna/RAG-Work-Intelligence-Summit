@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 class AgentConfig(BaseModel):
@@ -20,3 +20,5 @@ class ChatRequest(BaseModel):
     agent: AgentConfig
     message: str = Field(min_length=1, max_length=10000)
     history: list[dict[str, str]] = Field(default_factory=list)
+
+    gemini_api_key: SecretStr | None = None

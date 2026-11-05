@@ -1,5 +1,4 @@
 
-from agent.schemas import AgentConfig
 from agent.prompt import montar_mensagens
 
 from config import TOP_K
@@ -11,20 +10,17 @@ class AgentExecutor:
     """Executa agentes utilizando LLM e, opcionalmente, RAG."""
 
     def __init__(self):
-        # Não aplica o LoRA especializado em posts do Instagram.
-        self.gerador = Gerador(usar_lora=False)
+        self.gerador = None
 
     def executar(
         self,
-        agente: AgentConfig,
-        mensagem: str,
-        historico: list[dict[str, str]] | None = None,
-    ) -> dict:
-        """Executa uma mensagem e retorna resposta e fontes."""
-
+        agente,
+        mensagem,
+        historico=None,
+        gemini_api_key: str | None = None,
+    ):
         resultados = []
 
-        # Recupera documentos somente se o RAG estiver ativado.
         if agente.rag_enabled:
             resultados = buscar(
                 mensagem,
@@ -43,7 +39,18 @@ class AgentExecutor:
             historico=historico,
         )
 
-        resposta = self.gerador.gerar(mensagens)
+        if gemini_api_key:
+            gerador = Gerador(
+                usar_lora=False,
+                api_key=gemini_api_key,
+            )
+        else:
+            if self.gerador is None:
+                self.gerador = Gerador(usar_lora=False)
+
+            gerador = self.gerador
+
+        resposta = gerador.gerar(mensagens)
 
         return {
             "agent_id": agente.id,
