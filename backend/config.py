@@ -1,59 +1,66 @@
-"""Configuração central. Tudo que você vai querer ajustar fica aqui."""
-from pathlib import Path
+
+"""Configuração central do AgentLab."""
 
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
-
-MAX_NOVOS_TOKENS = 1024
-TEMPERATURA = 0.3
-# Carrega variáveis do .env (ex.: HF_TOKEN, se algum modelo exigir login)
-load_dotenv()
-
+# Carrega as variáveis do arquivo .env antes de acessá-las.
 RAIZ = Path(__file__).parent
+load_dotenv(RAIZ / ".env")
 
-# --- Pastas e arquivos -------------------------------------------------------
-PASTA_BASE = RAIZ / "base"                      # PDFs de origem
-PASTA_DB = RAIZ / "db"                          # ChromaDB persistido
+# Pastas e arquivos
+PASTA_BASE = RAIZ / "base"
+PASTA_DB = RAIZ / "db"
 PASTA_ADAPTADORES = RAIZ / "adapters"
 ADAPTADOR_LORA = PASTA_ADAPTADORES / "instagram"
-ARQUIVO_EXEMPLOS = RAIZ / "data" / "exemplos.jsonl"   # posts bons (treino LoRA)
+ARQUIVO_EXEMPLOS = RAIZ / "data" / "exemplos.jsonl"
 
-# --- Indexação e recuperação (RAG) ------------------------------------------
-# Multilíngue (funciona bem com português) e aceita até 512 tokens por chunk.
-# Se trocar o modelo, apague a pasta db/ e rode o index.py de novo.
+# Indexação e recuperação (RAG)
 MODELO_EMBEDDINGS = "intfloat/multilingual-e5-small"
-CHUNK_SIZE = 1000        # em caracteres (~250 tokens em português)
+CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
-TOP_K = 4                # quantos trechos entram no prompt
+TOP_K = 4
 
-# --- Geração -----------------------------------------------------------------
-# Precisa ser um modelo aberto (Hugging Face) para o LoRA poder ser aplicado.
-MODELO_LLM = "Qwen/Qwen2.5-1.5B-Instruct"
-MAX_NOVOS_TOKENS = 400
-TEMPERATURA = 0.7
+# Provedor padrão
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "llama").lower()
 
-# --- Regras do post (usadas no prompt e na validação) -------------------------
-TOM_DE_VOZ = "claro, próximo e direto, sem formalidades"   # ajuste ao seu perfil
-LIMITE_LEGENDA = 2200    # caracteres
-MAX_HASHTAGS = 5         # confira a regra atual do Instagram e ajuste
+# Chaves de API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-# --- Treino LoRA -------------------------------------------------------------
+# Modelos dos provedores
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+ANTHROPIC_MODEL = os.getenv(
+    "ANTHROPIC_MODEL",
+    "claude-3-5-haiku-latest",
+)
+
+# Modelo local
+MODELO_LLM = os.getenv(
+    "MODELO_LLM",
+    "Qwen/Qwen2.5-1.5B-Instruct",
+)
+
+# Parâmetros de geração
+MAX_NOVOS_TOKENS = int(
+    os.getenv("MAX_NOVOS_TOKENS", "1024")
+)
+TEMPERATURA = float(
+    os.getenv("TEMPERATURA", "0.3")
+)
+
+# Regras do conteúdo
+TOM_DE_VOZ = "claro, próximo e direto, sem formalidades"
+LIMITE_LEGENDA = 2200
+MAX_HASHTAGS = 5
+
+# Treinamento LoRA
 LORA_R = 8
 LORA_ALPHA = 16
 LORA_DROPOUT = 0.05
 EPOCAS = 3
 TAXA_APRENDIZADO = 2e-4
-
-# Provedor de geração
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "llama").lower()
-
-# Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
-# Geração
-MAX_NOVOS_TOKENS = int(os.getenv("MAX_NOVOS_TOKENS", "1024"))
-TEMPERATURA = float(os.getenv("TEMPERATURA", "0.3"))

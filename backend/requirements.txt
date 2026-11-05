@@ -16,3 +16,4 @@ openpyxl
 pandas
 openai
 anthropic
+google-genai

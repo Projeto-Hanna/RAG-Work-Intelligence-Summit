@@ -1,3 +1,6 @@
+
+from typing import Literal
+
 from pydantic import BaseModel, Field, SecretStr
 
 
@@ -21,4 +24,11 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=10000)
     history: list[dict[str, str]] = Field(default_factory=list)
 
-    gemini_api_key: SecretStr | None = None
+    provider: Literal[
+        "gemini",
+        "openai",
+        "anthropic",
+        "llama",
+    ] = "gemini"
+
+    api_key: SecretStr | None = None

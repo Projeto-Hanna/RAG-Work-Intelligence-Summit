@@ -10,14 +10,15 @@ class AgentExecutor:
     """Executa agentes utilizando LLM e, opcionalmente, RAG."""
 
     def __init__(self):
-        self.gerador = None
+        self.geradores = {}
 
     def executar(
         self,
         agente,
         mensagem,
         historico=None,
-        gemini_api_key: str | None = None,
+        provedor="gemini",
+        api_key: str | None = None,
     ):
         resultados = []
 
@@ -39,16 +40,20 @@ class AgentExecutor:
             historico=historico,
         )
 
-        if gemini_api_key:
+        if api_key:
             gerador = Gerador(
                 usar_lora=False,
-                api_key=gemini_api_key,
+                api_key=api_key,
+                provedor=provedor,
             )
         else:
-            if self.gerador is None:
-                self.gerador = Gerador(usar_lora=False)
+            if provedor not in self.geradores:
+                self.geradores[provedor] = Gerador(
+                    usar_lora=(provedor == "llama"),
+                    provedor=provedor,
+                )
 
-            gerador = self.gerador
+            gerador = self.geradores[provedor]
 
         resposta = gerador.gerar(mensagens)
 
@@ -58,4 +63,5 @@ class AgentExecutor:
             "response": resposta,
             "sources": formatar_fontes(resultados),
             "rag_enabled": agente.rag_enabled,
+            "provider": provedor,
         }
