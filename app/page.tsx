@@ -1,7 +1,10 @@
  "use client";
 import { useEffect, useState } from "react";
-import { Bot, Plus, House, Sparkles, MessageCircle, Download, ArrowLeft, ArrowRight, Settings2, Trash2, Wifi, Laptop, Check, Send, Copy, Pencil, X } from "lucide-react";
-
+import {
+  Bot, Plus, House, Sparkles, MessageCircle,
+  Download, ArrowLeft, ArrowRight, Settings2,
+  Trash2, Wifi, Laptop, Check, Send, Pencil
+} from "lucide-react";
 type Agent = { id:string; name:string; purpose:string; tone:string; instructions:string; createdAt:string };
 type Screen = "home"|"choose"|"guided"|"manual"|"review"|"chat"|"export"|"connection";
 const purposes = ["Analisar documentos","Criar relatórios e KPIs","Produzir conteúdo","Organizar tarefas","Outra finalidade"];
@@ -24,6 +27,7 @@ export default function Home() {
  const [answer,setAnswer]=useState("");
  const [messages,setMessages]=useState<{role:"user"|"assistant";text:string}[]>([]);
  const [chatInput,setChatInput]=useState("");
+ const [isSending, setIsSending] = useState(false);
  const [endpoint,setEndpoint]=useState("");
  const [token,setToken]=useState("");
  const [connectionStatus,setConnectionStatus]=useState("");
@@ -45,7 +49,81 @@ export default function Home() {
   setAgents(prev=>[a,...prev.filter(item=>item.id!==a.id)]);setSelected(a.id);setScreen("chat");setMessages([]);
  }
  function exportAgent(){const a=active||draft;const blob=new Blob([JSON.stringify({schemaVersion:1,name:a.name,purpose:a.purpose,tone:a.tone,instructions:a.instructions},null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=`${(a.name||"meu-agente").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-")}.json`;link.click();URL.revokeObjectURL(url)}
- function sendMessage(){const text=chatInput.trim();if(!text)return;setMessages(prev=>[...prev,{role:"user",text},{role:"assistant",text:"Esta é uma resposta de demonstração. Seu agente já tem uma configuração exportável, mas a conexão com o modelo de IA ainda será implementada."}]);setChatInput("")}
+
+async function sendMessage() {
+  const text = chatInput.trim();
+
+  if (!text || !active || isSending) return;
+
+  // Guarda o histórico anterior à mensagem atual.
+  const history = messages.map((message) => ({
+    role: message.role,
+    content: message.text,
+  }));
+
+  // Mostra imediatamente a mensagem do usuário.
+  setMessages((prev) => [
+    ...prev,
+    { role: "user", text },
+  ]);
+
+  setChatInput("");
+  setIsSending(true);
+
+  try {
+    const response = await fetch("/api/agents/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        agent: {
+          id: active.id,
+          name: active.name,
+          purpose: active.purpose,
+          tone: active.tone,
+          instructions: active.instructions,
+          rag_enabled: true,
+          top_k: 4,
+        },
+        message: text,
+        history,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Erro ao executar o agente."
+      );
+    }
+
+    const resposta = data.sources?.length
+      ? `${data.response}\n\nFontes consultadas:\n${data.sources.join("\n")}`
+      : data.response;
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", text: resposta },
+    ]);
+  } catch (error) {
+    const mensagem =
+      error instanceof Error
+        ? error.message
+        : "Não foi possível executar o agente.";
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        text: `Erro: ${mensagem}`,
+      },
+    ]);
+  } finally {
+    setIsSending(false);
+  }
+}
  const prompts=["Qual tarefa você quer facilitar?","Qual nome você gostaria de dar ao agente?","Como ele deve se comunicar?"];
  const hints=["Ex.: Analisar relatórios e identificar tendências","Ex.: Analista Inteligente","Escolha abaixo ou descreva outro estilo"];
  return <div className="shell">
@@ -60,7 +138,9 @@ export default function Home() {
    <div className="sidebar-bottom"><span className="status-dot"/> Protótipo do workshop <small>v0.1 · Interface demonstrativa</small></div>
   </aside>
   <main className="main">
-   <header className="topbar"><div className="mobile-brand"><Sparkles size={18}/> AgentLab</div><span className="event-label">WORK INTELLIGENCE SUMMIT</span><span className="pill"><span className="status-dot"/> Modo demonstração</span></header>
+   <header className="topbar"><div className="mobile-brand"><Sparkles size={18}/> AgentLab</div><span className="event-label">WORK INTELLIGENCE SUMMIT</span><span className="pill">
+  <span className="status-dot"/> Ambiente conectado
+</span></header>
    <div className="content">
    {screen==="home"&&<><section className="hero"><div className="eyebrow"><Sparkles size={15}/> SEU LABORATÓRIO DE IA</div><h1>Suas ideias.<br/><span>Seu agente de IA.</span></h1><p>Crie, personalize e experimente agentes de inteligência artificial. Sem precisar escrever uma linha de código.</p><button className="primary" onClick={()=>setScreen("choose")}><Plus size={18}/> Criar meu agente <ArrowRight size={18}/></button><div className="hero-orb"><Bot size={72}/></div></section>
    <div className="section-heading"><div><h2>Meus agentes</h2><p>Continue de onde parou ou comece algo novo.</p></div><span className="counter">{agents.length} agente(s)</span></div>
@@ -69,7 +149,118 @@ export default function Home() {
    {screen==="guided"&&<div className="narrow"><button className="back" onClick={()=>setScreen("choose")}><ArrowLeft size={17}/> Voltar</button><div className="step-row"><span>CRIANDO SEU AGENTE</span><span>Etapa {step+1} de 3</span></div><div className="progress"><span style={{width:`${(step+1)/3*100}%`}}/></div><div className="guide-bot"><Bot size={30}/></div><h1>{prompts[step]}</h1><p className="lead">{hints[step]}</p>{step===0&&<div className="suggestions">{purposes.map(p=><button key={p} onClick={()=>setAnswer(p)} className={answer===p?"selected":""}>{p}</button>)}</div>}{step===2&&<div className="suggestions">{tones.map(t=><button key={t} onClick={()=>setAnswer(t)} className={answer===t?"selected":""}>{t}</button>)}</div>}<label className="field-label" htmlFor="guided-answer">Sua resposta</label><input id="guided-answer" value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>e.key==="Enter"&&nextGuided()} placeholder="Digite sua resposta..."/><button className="primary full" disabled={!answer.trim()} onClick={nextGuided}>Continuar <ArrowRight size={17}/></button></div>}
    {screen==="manual"&&<div className="narrow"><button className="back" onClick={()=>setScreen("choose")}><ArrowLeft size={17}/> Voltar</button><div className="eyebrow">CONFIGURAÇÃO MANUAL</div><h1>Personalize seu agente</h1><p className="lead">Defina como seu agente deve agir e responder.</p><div className="form-card"><label>Nome do agente<input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="Ex.: Analista Inteligente"/></label><label>Objetivo principal<input value={draft.purpose} onChange={e=>setDraft({...draft,purpose:e.target.value})} placeholder="Ex.: Analisar relatórios"/></label><label>Tom de voz<select value={draft.tone} onChange={e=>setDraft({...draft,tone:e.target.value})}>{tones.map(t=><option key={t}>{t}</option>)}</select></label><label>Instruções adicionais (opcional)<textarea rows={5} value={draft.instructions} onChange={e=>setDraft({...draft,instructions:e.target.value})} placeholder="Você é um agente que..."/></label></div><button className="primary full" disabled={!draft.name.trim()||!draft.purpose.trim()} onClick={()=>setScreen("review")}>Revisar agente <ArrowRight size={17}/></button></div>}
    {screen==="review"&&<div className="narrow"><button className="back" onClick={()=>setScreen("guided")}><ArrowLeft size={17}/> Voltar</button><div className="eyebrow">QUASE LÁ</div><h1>Seu agente está tomando forma ✨</h1><p className="lead">Confira as instruções antes de começar a conversar.</p><div className="review-card"><div className="review-head"><div className="agent-avatar"><Bot/></div><div><h3>{draft.name}</h3><p>{draft.purpose}</p></div></div><label>Instruções do agente<textarea rows={11} value={draft.instructions||makeInstructions(draft)} onChange={e=>setDraft({...draft,instructions:e.target.value})}/></label></div><button className="primary full" onClick={saveAgent}><Check size={18}/> Criar e testar agente</button></div>}
-   {screen==="chat"&&active&&<div className="chat-layout"><div className="chat-header"><div className="agent-avatar small"><Bot size={21}/></div><div><h2>{active.name}</h2><p>{active.purpose}</p></div><button className="secondary" onClick={()=>{setDraft(active);setScreen("manual")}}><Pencil size={16}/> Editar</button><button className="secondary" onClick={()=>setScreen("export")}><Download size={16}/> Exportar</button></div><div className="messages">{messages.length===0?<div className="empty-chat"><div className="guide-bot"><Bot size={32}/></div><h2>Olá! Sou {active.name}.</h2><p>Seu agente está configurado. Faça uma pergunta para experimentar a interface.</p><div className="notice">O chat está em modo demonstrativo. Ainda não há um modelo de IA conectado.</div></div>:messages.map((m,i)=><div className={`message ${m.role}`} key={i}>{m.text}</div>)}</div><form className="chat-compose" onSubmit={e=>{e.preventDefault();sendMessage()}}><input aria-label="Mensagem" placeholder="Pergunte alguma coisa..." value={chatInput} onChange={e=>setChatInput(e.target.value)}/><button className="send" disabled={!chatInput.trim()} aria-label="Enviar"><Send size={19}/></button></form></div>}
+
+{screen === "chat" && active && (
+  <div className="chat-layout">
+
+    {/* Cabeçalho do agente */}
+    <div className="chat-header">
+      <div className="agent-avatar small">
+        <Bot size={21} />
+      </div>
+
+      <div>
+        <h2>{active.name}</h2>
+        <p>{active.purpose}</p>
+      </div>
+
+      <button
+        className="secondary"
+        onClick={() => {
+          setDraft(active);
+          setScreen("manual");
+        }}
+      >
+        <Pencil size={16} />
+        Editar
+      </button>
+
+      <button
+        className="secondary"
+        onClick={() => setScreen("export")}
+      >
+        <Download size={16} />
+        Exportar
+      </button>
+    </div>
+
+    {/* Histórico da conversa */}
+    <div className="messages">
+
+      {messages.length === 0 ? (
+        <div className="empty-chat">
+
+          <div className="guide-bot">
+            <Bot size={32} />
+          </div>
+
+          <h2>Olá! Sou {active.name}.</h2>
+
+          <p>
+            Seu agente está configurado.
+            Faça uma pergunta para começar a conversar.
+          </p>
+
+          <div className="notice">
+            Seu agente está conectado ao modelo de IA.
+            Envie uma mensagem para começar.
+          </div>
+
+        </div>
+      ) : (
+        messages.map((m, i) => (
+          <div
+            className={`message ${m.role}`}
+            key={i}
+          >
+            {m.text}
+          </div>
+        ))
+      )}
+
+      {/* Indicador de carregamento */}
+      {isSending && (
+        <div className="message assistant">
+          Gerando resposta...
+        </div>
+      )}
+
+    </div>
+
+    {/* Campo de envio */}
+    <form
+      className="chat-compose"
+      onSubmit={(e) => {
+        e.preventDefault();
+        sendMessage();
+      }}
+    >
+
+      <input
+        aria-label="Mensagem"
+        placeholder="Pergunte alguma coisa..."
+        value={chatInput}
+        onChange={(e) => setChatInput(e.target.value)}
+        disabled={isSending}
+      />
+
+      <button
+        className="send"
+        type="submit"
+        disabled={!chatInput.trim() || isSending}
+        aria-label="Enviar"
+      >
+        {isSending ? (
+          "..."
+        ) : (
+          <Send size={19} />
+        )}
+      </button>
+
+    </form>
+
+  </div>
+)}
    {screen==="export"&&active&&<div className="narrow"><button className="back" onClick={()=>setScreen("chat")}><ArrowLeft size={17}/> Voltar ao chat</button><div className="eyebrow">LEVE SEU AGENTE COM VOCÊ</div><h1>Seu agente, suas regras.</h1><p className="lead">Baixe as instruções e prepare-se para executar o agente no seu próprio ambiente.</p><div className="form-card"><div className="review-head"><div className="agent-avatar"><Download/></div><div><h3>{active.name}.json</h3><p>Configuração do agente · JSON</p></div></div><button className="primary full" onClick={exportAgent}><Download size={18}/> Baixar configuração</button></div><div className="notice">O arquivo exporta as instruções, não o modelo de IA. A estrutura de execução local será disponibilizada separadamente pela organização.</div><button className="secondary" onClick={()=>setScreen("connection")}><Laptop size={17}/> Configurar ambiente local</button></div>}
    {screen==="connection"&&<div className="narrow"><button className="back" onClick={()=>setScreen("home")}><ArrowLeft size={17}/> Voltar</button><div className="eyebrow">AMBIENTE DE EXECUÇÃO</div><h1>Conecte seu ambiente</h1><p className="lead">No futuro, você poderá usar um endpoint seguro para acessar seus agentes executados localmente.</p><div className="form-card"><label>Endpoint HTTPS<input type="url" value={endpoint} onChange={e=>setEndpoint(e.target.value)} placeholder="https://seu-endpoint.exemplo"/></label><label>Token de acesso<input type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="Token do ambiente"/></label><button className="primary full" onClick={()=>setConnectionStatus("Esta tela é apenas um protótipo. Nenhuma conexão foi realizada.")}>Testar conexão <Wifi size={17}/></button>{connectionStatus&&<div className="notice">{connectionStatus}</div>}</div><div className="notice">Não exponha APIs locais sem autenticação e HTTPS. Tokens digitados aqui não são armazenados nem enviados nesta versão.</div></div>}
    </div>
