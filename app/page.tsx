@@ -1,6 +1,10 @@
 
 "use client";
-
+import {
+  saveCredential,
+  getCredentialMetadata,
+  unlockCredential,
+} from "../lib/credential-vault";
 import { useEffect, useState } from "react";
 import {
   Bot,
@@ -20,7 +24,10 @@ import {
   Pencil,
   Eye,
   EyeOff,
+  LockKeyhole,
 } from "lucide-react";
+
+
 
 // ======================================================
 // TIPOS
@@ -32,6 +39,7 @@ type Agent = {
   purpose: string;
   tone: string;
   instructions: string;
+  provider: Provider;
   createdAt: string;
 };
 
@@ -76,6 +84,7 @@ const initial: Agent = {
   purpose: "",
   tone: tones[0],
   instructions: "",
+  provider: "gemini",
   createdAt: "",
 };
 
@@ -123,7 +132,7 @@ function generateId(): string {
 // ======================================================
 // COMPONENTE PRINCIPAL
 // ======================================================
-
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 export default function Home() {
   // Navegação
   const [screen, setScreen] = useState<Screen>("home");
@@ -147,6 +156,18 @@ export default function Home() {
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
 
+
+  // Credenciais
+  const [credentialPassword, setCredentialPassword] = useState("");
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState("");
+  const [pendingMessage, setPendingMessage] = useState("");
+  const [unlockedCredentials, setUnlockedCredentials] = useState<Record<string, { provider: Provider; apiKey: string }>>({});
+  const [credentialStatus, setCredentialStatus] = useState<Record<string, "unlocked" | "locked" | "missing" | "local">>({});
+  const [lastActivityByAgent, setLastActivityByAgent] = useState<Record<string, number>>({});
+  const [sessionNotice, setSessionNotice] = useState("");
+  const [clockNow, setClockNow] = useState(Date.now());
   // Ambiente
   const [endpoint, setEndpoint] = useState("");
   const [token, setToken] = useState("");
@@ -184,6 +205,202 @@ export default function Home() {
 
   const active = agents.find((agent) => agent.id === selected);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function updateCredentialStatuses() {
+      const statuses: Record<
+        string,
+        "unlocked" | "locked" | "missing" | "local"
+      > = {};
+
+      for (const agent of agents) {
+        const agentProvider = agent.provider ?? "gemini";
+
+        if (agentProvider === "llama") {
+          statuses[agent.id] = "local";
+          continue;
+        }
+
+        if (
+          unlockedCredentials[agent.id]?.provider === agentProvider
+        ) {
+          statuses[agent.id] = "unlocked";
+          continue;
+        }
+
+        const metadata = await getCredentialMetadata(agent.id);
+        statuses[agent.id] = metadata ? "locked" : "missing";
+      }
+
+      if (!cancelled) {
+        setCredentialStatus(statuses);
+      }
+    }
+
+    updateCredentialStatuses();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agents, unlockedCredentials]);
+
+// Atualiza o relógio a cada segundo
+useEffect(() => {
+  const interval = window.setInterval(() => {
+    setClockNow(Date.now());
+  }, 1000);
+
+  return () => window.clearInterval(interval);
+}, []);
+
+// Controle de atividade e bloqueio automático por agente
+useEffect(() => {
+  const agentId = active?.id;
+
+  const registerActivity = () => {
+    if (!agentId || !unlockedCredentials[agentId]) return;
+
+    setLastActivityByAgent((previous) => ({
+      ...previous,
+      [agentId]: Date.now(),
+    }));
+  };
+
+  window.addEventListener("pointerdown", registerActivity);
+  window.addEventListener("keydown", registerActivity);
+  window.addEventListener("touchstart", registerActivity);
+  window.addEventListener("wheel", registerActivity);
+
+  const unlockedIds = Object.keys(unlockedCredentials);
+
+  const expirationTimes = unlockedIds.map((id) => {
+    const lastActivity = lastActivityByAgent[id] ?? Date.now();
+    return lastActivity + IDLE_TIMEOUT_MS;
+  });
+
+  if (expirationTimes.length > 0) {
+    const nextExpiration = Math.min(...expirationTimes);
+
+    const timeout = window.setTimeout(() => {
+      const now = Date.now();
+
+      const expiredIds = Object.keys(unlockedCredentials).filter((id) => {
+        const lastActivity = lastActivityByAgent[id] ?? now;
+        return now - lastActivity >= IDLE_TIMEOUT_MS;
+      });
+
+      if (expiredIds.length > 0) {
+        setUnlockedCredentials((previous) => {
+          const updated = { ...previous };
+          expiredIds.forEach((id) => delete updated[id]);
+          return updated;
+        });
+
+        setLastActivityByAgent((previous) => {
+          const updated = { ...previous };
+          expiredIds.forEach((id) => delete updated[id]);
+          return updated;
+        });
+
+        if (agentId && expiredIds.includes(agentId)) {
+          setSessionNotice(
+            "Credencial bloqueada por inatividade. Desbloqueie novamente para continuar."
+          );
+        }
+      }
+    }, Math.max(nextExpiration - Date.now(), 0));
+
+    return () => {
+      window.removeEventListener("pointerdown", registerActivity);
+      window.removeEventListener("keydown", registerActivity);
+      window.removeEventListener("touchstart", registerActivity);
+      window.removeEventListener("wheel", registerActivity);
+      window.clearTimeout(timeout);
+    };
+  }
+
+  return () => {
+    window.removeEventListener("pointerdown", registerActivity);
+    window.removeEventListener("keydown", registerActivity);
+    window.removeEventListener("touchstart", registerActivity);
+    window.removeEventListener("wheel", registerActivity);
+  };
+}, [active?.id, unlockedCredentials, lastActivityByAgent]);
+
+// Controle de atividade e bloqueio automático por agente
+useEffect(() => {
+    const agentId = active?.id;
+
+    const registerActivity = () => {
+      if (!agentId || !unlockedCredentials[agentId]) return;
+
+      setLastActivityByAgent((previous) => ({
+        ...previous,
+        [agentId]: Date.now(),
+      }));
+    };
+
+    window.addEventListener("pointerdown", registerActivity);
+    window.addEventListener("keydown", registerActivity);
+    window.addEventListener("touchstart", registerActivity);
+    window.addEventListener("wheel", registerActivity);
+
+    const unlockedIds = Object.keys(unlockedCredentials);
+
+    const expirationTimes = unlockedIds.map((id) => {
+      const lastActivity = lastActivityByAgent[id];
+      return (lastActivity || Date.now()) + IDLE_TIMEOUT_MS;
+    });
+
+    if (expirationTimes.length > 0) {
+      const nextExpiration = Math.min(...expirationTimes);
+
+      const timeout = window.setTimeout(() => {
+        const now = Date.now();
+
+        const expiredIds = Object.keys(unlockedCredentials).filter((id) => {
+          const lastActivity = lastActivityByAgent[id] || now;
+          return now - lastActivity >= IDLE_TIMEOUT_MS;
+        });
+
+        if (expiredIds.length > 0) {
+          setUnlockedCredentials((previous) => {
+            const updated = { ...previous };
+            expiredIds.forEach((id) => delete updated[id]);
+            return updated;
+          });
+
+          setLastActivityByAgent((previous) => {
+            const updated = { ...previous };
+            expiredIds.forEach((id) => delete updated[id]);
+            return updated;
+          });
+
+          if (agentId && expiredIds.includes(agentId)) {
+            setSessionNotice(
+              "Credencial bloqueada por inatividade. Desbloqueie novamente para continuar."
+            );
+          }
+        }
+      }, Math.max(nextExpiration - Date.now(), 0));
+
+      return () => {
+        window.removeEventListener("pointerdown", registerActivity);
+        window.removeEventListener("keydown", registerActivity);
+        window.removeEventListener("touchstart", registerActivity);
+        window.removeEventListener("wheel", registerActivity);
+        window.clearTimeout(timeout);
+      };
+    }
+
+    return () => {
+      window.removeEventListener("pointerdown", registerActivity);
+      window.removeEventListener("keydown", registerActivity);
+      window.removeEventListener("touchstart", registerActivity);
+      window.removeEventListener("wheel", registerActivity);
+    };
+  }, [active?.id, unlockedCredentials, lastActivityByAgent]);
   // ====================================================
   // CRIAÇÃO DE AGENTE
   // ====================================================
@@ -195,6 +412,7 @@ export default function Home() {
 
     setProvider("gemini");
     setApiKey("");
+    setCredentialPassword("");
     setShowApiKey(false);
 
     setScreen(mode);
@@ -235,14 +453,35 @@ export default function Home() {
     }
   }
 
-  function saveAgent() {
+  async function saveAgent() {
+  try {
     const agent: Agent = {
       ...draft,
       id: draft.id || generateId(),
+      provider,
       createdAt: draft.createdAt || new Date().toISOString(),
       instructions:
         draft.instructions.trim() || makeInstructions(draft),
     };
+
+    if (provider !== "llama") {
+      if (!apiKey.trim()) {
+        throw new Error("Informe a chave de API do provedor.");
+      }
+
+      if (credentialPassword.length < 12) {
+        throw new Error(
+          "A senha deve possuir pelo menos 12 caracteres."
+        );
+      }
+
+      await saveCredential(
+        agent.id,
+        provider,
+        apiKey,
+        credentialPassword
+      );
+    }
 
     setAgents((previous) => [
       agent,
@@ -251,8 +490,18 @@ export default function Home() {
 
     setSelected(agent.id);
     setMessages([]);
+    setApiKey("");
+    setCredentialPassword("");
+    setShowApiKey(false);
     setScreen("chat");
+  } catch (error) {
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Não foi possível salvar as credenciais."
+    );
   }
+}
 
   // ====================================================
   // EXPORTAÇÃO
@@ -301,97 +550,202 @@ export default function Home() {
   // CHAT
   // ====================================================
 
-  async function sendMessage() {
-    const text = chatInput.trim();
+ async function sendMessage() {
+  const text = chatInput.trim();
 
-    if (!text || !active || isSending) return;
+  if (!text || !active || isSending) return;
+  setLastActivityByAgent((previous) => ({
+    ...previous,
+    [active.id]: Date.now(),
+  }));
 
-    const history = messages.map((message) => ({
-      role: message.role,
-      content: message.text,
-    }));
+setSessionNotice("");
 
-    setMessages((previous) => [
-      ...previous,
-      {
-        role: "user",
-        text,
-      },
-    ]);
+  setIsSending(true);
 
-    setChatInput("");
-    setIsSending(true);
+  try {
+    const agentProvider = active.provider ?? "gemini";
 
-    try {
-      const response = await fetch("/api/agents/chat", {
-        method: "POST",
+    if (agentProvider !== "llama") {
+      const cachedCredential = unlockedCredentials[active.id];
 
-        headers: {
-          "Content-Type": "application/json",
-        },
+      if (
+        cachedCredential &&
+        cachedCredential.provider === agentProvider
+      ) {
+        await executeMessage(text, cachedCredential.apiKey);
+        return;
+      }
 
-        body: JSON.stringify({
-          agent: {
-            id: active.id,
-            name: active.name,
-            purpose: active.purpose,
-            tone: active.tone,
-            instructions: active.instructions,
-            rag_enabled: true,
-            top_k: 4,
-          },
+      const metadata = await getCredentialMetadata(active.id);
 
-          message: text,
-          history,
-
-          provider,
-
-          api_key:
-            provider === "llama"
-              ? null
-              : apiKey.trim() || null,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
+      if (!metadata) {
         throw new Error(
-          data.detail || "Erro ao executar o agente."
+          "Este agente não possui uma chave cadastrada. Edite o agente e cadastre novamente a chave e a senha."
         );
       }
 
-      const resposta = data.sources?.length
-        ? `${data.response}\n\nFontes consultadas:\n${data.sources.join(
-            "\n"
-          )}`
-        : data.response;
-
-      setMessages((previous) => [
-        ...previous,
-        {
-          role: "assistant",
-          text: resposta,
-        },
-      ]);
-    } catch (error) {
-      const mensagem =
-        error instanceof Error
-          ? error.message
-          : "Não foi possível executar o agente.";
-
-      setMessages((previous) => [
-        ...previous,
-        {
-          role: "assistant",
-          text: `Erro: ${mensagem}`,
-        },
-      ]);
-    } finally {
-      setIsSending(false);
+      setPendingMessage(text);
+      setUnlockPassword("");
+      setUnlockError("");
+      setShowUnlockModal(true);
+      return;
     }
+
+    await executeMessage(text, null);
+  } catch (error) {
+    const mensagem =
+      error instanceof Error
+        ? error.message
+        : "Não foi possível preparar o envio.";
+
+    setMessages((previous) => [
+      ...previous,
+      { role: "assistant", text: `Erro: ${mensagem}` },
+    ]);
+  } finally {
+    setIsSending(false);
+  }
+}
+
+async function executeMessage(
+  text: string,
+  apiKeyForRequest: string | null
+) {
+  if (!active) return;
+
+  const agentProvider = active.provider ?? "gemini";
+
+  const history = messages.map((message) => ({
+    role: message.role,
+    content: message.text,
+  }));
+
+  setMessages((previous) => [
+    ...previous,
+    { role: "user", text },
+  ]);
+
+  setChatInput("");
+
+  const response = await fetch("/api/agents/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      agent: {
+        id: active.id,
+        name: active.name,
+        purpose: active.purpose,
+        tone: active.tone,
+        instructions: active.instructions,
+        rag_enabled: true,
+        top_k: 4,
+      },
+      message: text,
+      history,
+      provider: agentProvider,
+      api_key: apiKeyForRequest,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data.detail || "Erro ao executar o agente."
+    );
   }
 
+  const resposta = data.sources?.length
+    ? `${data.response}\n\nFontes consultadas:\n${data.sources.join(
+        "\n"
+      )}`
+    : data.response;
+
+  setMessages((previous) => [
+    ...previous,
+    { role: "assistant", text: resposta },
+  ]);
+}
+
+async function unlockAndSendMessage() {
+  if (!active || !pendingMessage || isSending) return;
+
+  if (!unlockPassword) {
+    setUnlockError("Informe sua senha.");
+    return;
+  }
+
+  setIsSending(true);
+  setUnlockError("");
+
+  try {
+    const credential = await unlockCredential(
+      active.id,
+      unlockPassword
+    );
+    setUnlockedCredentials((previous) => ({
+      ...previous,
+      [active.id]: {
+        provider: credential.provider,
+        apiKey: credential.apiKey,
+      },
+    }));
+    setLastActivityByAgent((previous) => ({
+      ...previous,
+      [active.id]: Date.now(),
+    }));
+    setSessionNotice("");
+
+    if (credential.provider !== active.provider) {
+      throw new Error(
+        "O provedor da credencial não corresponde ao agente."
+      );
+    }
+
+    const text = pendingMessage;
+
+    setShowUnlockModal(false);
+    setUnlockPassword("");
+    setPendingMessage("");
+
+    await executeMessage(text, credential.apiKey);
+  } catch (error) {
+    setUnlockError(
+      error instanceof Error
+        ? error.message
+        : "Não foi possível desbloquear a credencial."
+    );
+  } finally {
+    setIsSending(false);
+  }
+}
+  function lockCredentials() {
+    if (!active) return;
+
+    setUnlockedCredentials((previous) => {
+      const updated = { ...previous };
+      delete updated[active.id];
+      return updated;
+    });
+
+    setLastActivityByAgent((previous) => {
+      const updated = { ...previous };
+      delete updated[active.id];
+      return updated;
+    });
+
+    setShowUnlockModal(false);
+    setUnlockPassword("");
+    setPendingMessage("");
+    setUnlockError("");
+
+    setSessionNotice(
+      `Credencial de ${active.name} bloqueada. Informe a senha novamente para continuar.`
+    );
+  }
   // ====================================================
   // INTERFACE
   // ====================================================
@@ -543,58 +897,123 @@ export default function Home() {
 
               <div className="agent-grid">
 
-                {agents.map((agent) => (
-                  <article
-                    className="agent-card"
-                    key={agent.id}
-                  >
-                    <div className="agent-avatar">
-                      <Bot size={26} />
-                    </div>
+                {agents.map((agent) => {
+                  const lastActivity =
+                    lastActivityByAgent[agent.id] ?? clockNow;
 
-                    <h3>{agent.name}</h3>
+                  const remainingTime = Math.max(
+                    0,
+                    IDLE_TIMEOUT_MS - (clockNow - lastActivity)
+                  );
 
-                    <p>{agent.purpose}</p>
+                  const minutes = Math.floor(remainingTime / 60000);
+                  const seconds = Math.floor((remainingTime % 60000) / 1000);
 
-                    <div className="card-actions">
+                  const formattedTime = `${String(minutes).padStart(2, "0")}:${String(
+                    seconds
+                  ).padStart(2, "0")}`;
 
-                      <button
-                        className="secondary"
-                        onClick={() => {
-                          setSelected(agent.id);
-                          setMessages([]);
-                          setScreen("chat");
-                        }}
+                  return (
+                    <article className="agent-card" key={agent.id}>
+                      <div className="agent-avatar">
+                        <Bot size={26} />
+                      </div>
+
+                      <h3>{agent.name}</h3>
+
+                      <p>{agent.purpose}</p>
+
+                      <div
+                        className={`credential-status ${
+                          credentialStatus[agent.id] ?? "loading"
+                        }`}
                       >
-                        Conversar
-                        <ArrowRight size={16} />
-                      </button>
+                        {credentialStatus[agent.id] === "unlocked" && (
+                          <>
+                            <Check size={14} />
+                            Desbloqueada
+                          </>
+                        )}
 
-                      <button
-                        className="icon-button"
-                        aria-label={`Excluir ${agent.name}`}
-                        onClick={() => {
-                          if (confirm(`Excluir ${agent.name}?`)) {
-                            setAgents((previous) =>
-                              previous.filter(
-                                (item) => item.id !== agent.id
-                              )
-                            );
+                        {credentialStatus[agent.id] === "locked" && (
+                          <>
+                            <LockKeyhole size={14} />
+                            Bloqueada
+                          </>
+                        )}
 
-                            if (selected === agent.id) {
-                              setSelected(null);
-                              setMessages([]);
-                              setScreen("home");
+                        {credentialStatus[agent.id] === "missing" && (
+                          <>
+                            <LockKeyhole size={14} />
+                            Sem credencial
+                          </>
+                        )}
+
+                        {credentialStatus[agent.id] === "local" && (
+                          <>
+                            <Laptop size={14} />
+                            Modelo local
+                          </>
+                        )}
+
+                        {!credentialStatus[agent.id] && "Verificando credencial..."}
+                      </div>
+
+                      {credentialStatus[agent.id] === "unlocked" && (
+                        <div className="credential-timer">
+                          <LockKeyhole size={13} />
+                          Bloqueio automático em {formattedTime}
+                        </div>
+                      )}
+
+                      <div className="card-actions">
+                        <button
+                          className="secondary"
+                          onClick={() => {
+                            setSelected(agent.id);
+                            setMessages([]);
+                            setScreen("chat");
+                          }}
+                        >
+                          Conversar
+                          <ArrowRight size={16} />
+                        </button>
+
+                        <button
+                          className="icon-button"
+                          aria-label={`Excluir ${agent.name}`}
+                          onClick={() => {
+                            if (confirm(`Excluir ${agent.name}?`)) {
+                              setAgents((previous) =>
+                                previous.filter((item) => item.id !== agent.id)
+                              );
+
+                              if (selected === agent.id) {
+                                setSelected(null);
+                                setMessages([]);
+                                setScreen("home");
+                              }
+
+                              setUnlockedCredentials((previous) => {
+                                const updated = { ...previous };
+                                delete updated[agent.id];
+                                return updated;
+                              });
+
+                              setLastActivityByAgent((previous) => {
+                                const updated = { ...previous };
+                                delete updated[agent.id];
+                                return updated;
+                              });
                             }
-                          }
-                        }}
-                      >
-                        <Trash2 size={17} />
-                      </button>
-
-                    </div>
-                  </article>
-                ))}
+                          }}
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
 
                 <button
                   className="new-card"
@@ -1033,13 +1452,31 @@ export default function Home() {
                       </button>
 
                     </div>
+                    <label
+                      htmlFor="credential-password"
+                      style={{ marginTop: "18px" }}
+                    >
+                      Senha para proteger a chave de API
+                    </label>
+
+                    <input
+                      id="credential-password"
+                      type="password"
+                      value={credentialPassword}
+                      onChange={(e) =>
+                        setCredentialPassword(e.target.value)
+                      }
+                      placeholder="Crie uma senha com pelo menos 12 caracteres"
+                      autoComplete="new-password"
+                      minLength={12}
+                    />
                   </>
                 )}
 
                 <p className="lead">
                   {provider === "llama"
                     ? "O agente utilizará o modelo Llama configurado no backend. Nenhuma chave de API é necessária."
-                    : `A chave será utilizada pelo ${providerNames[provider]}. Ela não será salva junto ao agente nem incluída na exportação. Se deixar em branco, o backend tentará utilizar a chave configurada no arquivo .env.`}
+                    : "Sua chave de API será criptografada localmente e protegida pela senha definida acima. A senha não será armazenada. Se esquecê-la, será necessário cadastrar uma nova credencial."}
                 </p>
 
               </div>
@@ -1061,6 +1498,79 @@ export default function Home() {
 
           {screen === "chat" && active && (
             <div className="chat-layout">
+              {showUnlockModal && (
+                <div className="credential-overlay">
+                  <div
+                    className="credential-modal"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="unlock-title"
+                  >
+                    <div className="guide-bot">
+                      <Bot size={30} />
+                    </div>
+
+                    <h2 id="unlock-title">
+                      Desbloquear credencial
+                    </h2>
+
+                    <p className="lead">
+                      Digite a senha que você definiu ao cadastrar
+                      a chave de API de {active.name}.
+                    </p>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        unlockAndSendMessage();
+                      }}
+                    >
+                      <label htmlFor="unlock-password">
+                        Senha de acesso
+                      </label>
+
+                      <input
+                        id="unlock-password"
+                        type="password"
+                        value={unlockPassword}
+                        onChange={(e) => setUnlockPassword(e.target.value)}
+                        placeholder="Digite sua senha"
+                        autoComplete="current-password"
+                        autoFocus
+                        disabled={isSending}
+                      />
+
+                      {unlockError && (
+                        <p className="credential-error">
+                          {unlockError}
+                        </p>
+                      )}
+
+                      <button
+                        className="primary full"
+                        type="submit"
+                        disabled={!unlockPassword || isSending}
+                      >
+                        {isSending ? "Desbloqueando..." : "Desbloquear e enviar"}
+                      </button>
+
+                      <button
+                        className="secondary full"
+                        type="button"
+                        disabled={isSending}
+                        onClick={() => {
+                          setShowUnlockModal(false);
+                          setUnlockPassword("");
+                          setUnlockError("");
+                          setPendingMessage("");
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
 
               <div className="chat-header">
 
@@ -1095,7 +1605,11 @@ export default function Home() {
               </div>
 
               <div className="messages">
-
+                  {sessionNotice && (
+                    <div className="notice">
+                      {sessionNotice}
+                    </div>
+                  )}
                 {messages.length === 0 ? (
                   <div className="empty-chat">
 
@@ -1112,7 +1626,7 @@ export default function Home() {
 
                     <div className="notice">
                       Provedor selecionado:{" "}
-                      {providerNames[provider]}.
+                      {providerNames[active.provider ?? "gemini"]}.
                       Envie uma mensagem para começar.
                     </div>
 
@@ -1173,6 +1687,15 @@ export default function Home() {
 
             </div>
           )}
+          <button
+            className="secondary"
+            onClick={lockCredentials}
+            disabled={!active || !unlockedCredentials[active.id]}
+            title="Bloquear todas as credenciais desta sessão"
+          >
+            <LockKeyhole size={16} />
+            Bloquear
+          </button>
 
           {/* ============================================
               EXPORTAÇÃO
