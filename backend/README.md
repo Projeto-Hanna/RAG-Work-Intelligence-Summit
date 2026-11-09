@@ -1,259 +1,306 @@
-# Gerador de Posts (RAG + LoRA + Gemini)
+# AgentLab — Plataforma de Agentes de IA com RAG
 
-Sistema de geração de posts para redes sociais utilizando **Retrieval-Augmented Generation (RAG)**, fine-tuning com **LoRA** e integração com a **API do Google Gemini**.
+Plataforma para criação e gerenciamento de agentes de inteligência artificial, com integração a diferentes provedores de LLM e sistemas de Retrieval-Augmented Generation (RAG).
 
-O projeto permite alternar entre um modelo Llama executado localmente, com ou sem adaptador LoRA, e um modelo Gemini acessado via API.
+O **AgentLab** permite configurar agentes com instruções próprias, conectar bases de conhecimento documentais e gerar respostas contextualizadas a partir de informações recuperadas por busca semântica.
+
+A arquitetura combina uma interface web, uma API em Python, armazenamento relacional de metadados e bancos vetoriais independentes para gerenciamento do conhecimento de cada agente.
 
 ## Arquitetura
 
-**Fluxo offline:**
+O sistema é dividido em duas camadas principais:
 
-PDFs → Chunking → Embeddings → ChromaDB
+### Frontend
 
-**Fluxo online:**
+Aplicação web desenvolvida com Next.js, React e TypeScript, responsável pela interface de gerenciamento e interação com os agentes.
 
-Tema → Retriever (Top-K) → Prompt (contexto + instruções) → LLM → Validação → Revisão humana
+### Backend
 
-**Provedores de LLM disponíveis:**
+API desenvolvida com FastAPI e Python, responsável pela execução dos agentes, processamento documental, recuperação de contexto e integração com os provedores de modelos de linguagem.
 
-- **Llama + LoRA:** execução local utilizando Transformers, PyTorch e PEFT.
-- **Gemini API:** geração remota utilizando o SDK oficial `google-genai`.
+### Fluxo de processamento documental
 
-## Módulos
+```text
+Upload de documentos
+        ↓
+Validação e armazenamento
+        ↓
+Extração do conteúdo
+        ↓
+Divisão em chunks
+        ↓
+Geração de embeddings
+        ↓
+Armazenamento no ChromaDB
+```
 
-| Arquivo | Responsabilidade |
+### Fluxo de geração de respostas
+
+```text
+Pergunta do usuário
+        ↓
+Identificação do agente
+        ↓
+Retriever (busca semântica)
+        ↓
+Recuperação dos chunks relevantes
+        ↓
+Construção do prompt com contexto
+        ↓
+LLM
+        ↓
+Resposta contextualizada
+```
+
+## Principais funcionalidades
+
+- **Gerenciamento de agentes:** criação, configuração e utilização de agentes com instruções específicas.
+- **Múltiplos provedores de LLM:** integração com diferentes provedores, incluindo Gemini, OpenAI, Anthropic e modelos locais, conforme a configuração disponível.
+- **RAG:** recuperação de informações relevantes em bases documentais para fundamentar as respostas.
+- **Gerenciamento documental:** upload, listagem e exclusão de documentos associados aos agentes.
+- **Indexação individual:** processamento e indexação de documentos de forma independente, sem exigir a reconstrução completa da base.
+- **Reindexação:** atualização dos vetores de um documento já indexado.
+- **Bases de conhecimento:** suporte a uma base compartilhada de testes e bases individuais por agente.
+- **Persistência:** armazenamento de metadados e informações dos agentes em SQLite e vetores no ChromaDB.
+
+## Gerenciamento das bases de conhecimento
+
+O AgentLab trabalha com dois tipos de bases:
+
+| Tipo | Descrição |
 |---|---|
-| `config.py` | Parâmetros e configurações de todas as etapas |
-| `embeddings.py` | Modelo de embeddings compartilhado entre indexação e consulta |
-| `index.py` | Processamento dos PDFs, chunking, embeddings e armazenamento no ChromaDB (offline) |
-| `retriever.py` | Recuperação dos documentos relevantes (Top-K) |
-| `prompt.py` | Construção do prompt com contexto, instruções e tom de comunicação |
-| `llm.py` | Gerenciamento dos provedores Llama + LoRA e Gemini API |
-| `validate.py` | Validação e formatação das respostas geradas |
-| `pipeline.py` | Orquestração das etapas online do RAG |
-| `main.py` | Interface de execução, revisão humana e armazenamento de exemplos |
-| `train_lora.py` | Fine-tuning LoRA utilizando exemplos aprovados (offline) |
+| `test` | Utiliza uma base de conhecimento compartilhada entre os agentes configurados nesse modo. |
+| `custom` | Mantém uma base de conhecimento individual para cada agente. |
+
+Na modalidade individual, cada agente possui seus próprios documentos e seu próprio banco vetorial.
+
+O escopo de recuperação é utilizado para evitar que informações de uma base sejam recuperadas indevidamente por outra.
+
+### Formatos de documentos suportados
+
+- PDF
+- CSV
+- XLSX
+- JSON
+
+O limite de upload implementado é de 50 MB por arquivo.
 
 ## Tecnologias
 
-- **Linguagem:** Python
-- **RAG:** LangChain e ChromaDB
-- **Embeddings:** Sentence Transformers
-- **LLM local:** Transformers e PyTorch
-- **Fine-tuning:** PEFT (LoRA)
-- **LLM via API:** Google Gemini (`google-genai`)
-- **Interface:** CLI / aplicação web
-- **Versionamento:** Git e GitHub
+| Categoria | Tecnologias |
+|---|---|
+| Linguagem | Python, TypeScript |
+| Frontend | Next.js, React |
+| Backend | FastAPI |
+| Banco relacional | SQLite |
+| Banco vetorial | ChromaDB |
+| RAG | LangChain |
+| Embeddings | Sentence Transformers |
+| LLMs | Gemini, OpenAI, Anthropic e modelos locais |
+| Versionamento | Git e GitHub |
+
+## Estrutura do projeto
+
+```text
+RAG-Work-Intelligence-Summit/
+│
+├── app/
+│   ├── api/
+│   │   └── agents/
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+│
+├── backend/
+│   ├── agent/
+│   │   ├── executor.py
+│   │   └── schemas.py
+│   │
+│   ├── api/
+│   │   ├── agents.py
+│   │   └── documents.py
+│   │
+│   ├── database/
+│   │   └── agentlab.db
+│   │
+│   ├── data/
+│   │   └── agents/
+│   │
+│   ├── config.py
+│   ├── database.py
+│   ├── embeddings.py
+│   ├── index.py
+│   ├── knowledge_base.py
+│   ├── retriever.py
+│   └── webapp.py
+│
+├── package.json
+├── requirements.txt
+└── README.md
+```
 
 ## Configuração inicial
 
 ### 1. Clonar o repositório
 
 ```bash
-git clone https://github.com/dev-Burandelei/RAG_POST.git
-cd RAG_POST
+git clone https://github.com/dev-Burandelei/RAG-Work-Intelligence-Summit.git
+cd RAG-Work-Intelligence-Summit
 ```
 
-### 2. Criar e ativar o ambiente virtual
+### 2. Configurar o backend
 
-Windows (PowerShell):
+Entre na pasta do backend:
+
+```bash
+cd backend
+```
+
+Crie e ative o ambiente virtual:
+
+**Windows (PowerShell):**
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
-Linux / macOS:
+**Linux / macOS:**
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Instalar as dependências
+Instale as dependências:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Para treinamento LoRA, instale também:
+Configure as variáveis de ambiente conforme os provedores de LLM habilitados no arquivo de configuração do projeto.
+
+### 3. Configurar o frontend
+
+Na raiz do projeto:
 
 ```bash
-pip install -r requirements-treino.txt
+npm install
 ```
 
-### 4. Configurar as variáveis de ambiente
-
-Crie um arquivo `.env` na raiz do projeto:
-
-```env
-# Provedor de LLM: llama ou gemini
-LLM_PROVIDER=llama
-
-# Configurações do Gemini
-GEMINI_API_KEY=sua_chave_aqui
-GEMINI_MODEL=gemini-2.5-flash
-
-# Parâmetros de geração
-MAX_NOVOS_TOKENS=1024
-TEMPERATURA=0.3
-```
-
-Para utilizar o Gemini, obtenha uma chave de API no [Google AI Studio](https://aistudio.google.com/apikey).
-
-**Importante:** adicione `.env` ao `.gitignore`. Nunca compartilhe ou envie sua chave de API ao GitHub.
+Configure as variáveis de ambiente necessárias para a comunicação entre o frontend e o backend.
 
 ## Execução
 
-### 1. Preparar a base de conhecimento
+O AgentLab utiliza dois serviços: frontend e backend.
 
-Coloque os arquivos PDF na pasta `base/` e execute:
+### 1. Iniciar o backend
 
-```bash
-python index.py
-```
-
-O processo realiza:
-
-1. Leitura dos documentos.
-2. Divisão em chunks.
-3. Geração dos embeddings.
-4. Armazenamento dos vetores no ChromaDB (`db/`).
-
-Essa etapa é executada novamente sempre que houver alterações relevantes na base de documentos ou na configuração de indexação.
-
-### 2. Testar a recuperação
-
-Antes de gerar posts, valide a recuperação dos documentos:
+Dentro da pasta `backend`, com o ambiente virtual ativado:
 
 ```bash
-python retriever.py "tema do post"
+python -m uvicorn webapp:app --reload --host 127.0.0.1 --port 8000
 ```
 
-O retriever realiza a busca semântica e retorna os documentos mais relevantes para o tema informado.
-
-### 3. Selecionar o modelo de geração
-
-A escolha do provedor é feita pela variável `LLM_PROVIDER` no arquivo `.env`.
-
-**Opção A — Llama local**
-
-```env
-LLM_PROVIDER=llama
-```
-
-Para utilizar o modelo base sem adaptador LoRA:
-
-```bash
-python main.py --sem-lora
-```
-
-Para utilizar o modelo com o adaptador treinado:
-
-```bash
-python main.py
-```
-
-O adaptador é carregado a partir de `adapters/instagram/`, quando disponível.
-
-**Opção B — Gemini API**
-
-```env
-LLM_PROVIDER=gemini
-```
-
-Execute:
-
-```bash
-python main.py
-```
-
-A geração será realizada pela API do Gemini, sem necessidade de carregar o modelo localmente.
-
-> **Observação:** o adaptador LoRA treinado para o Llama não é compatível com o Gemini. A opção `--sem-lora` não é necessária quando o provedor selecionado é o Gemini.
-
-### 4. Revisão humana
-
-Após a geração:
-
-1. Analise o conteúdo produzido.
-2. Aprove ou edite as respostas.
-3. Armazene os exemplos aprovados em `data/exemplos.jsonl`.
-
-Esses exemplos formarão a base para futuras etapas de fine-tuning.
-
-### 5. Treinamento LoRA
-
-Após acumular algumas dezenas de exemplos revisados, instale as dependências de treinamento:
-
-```bash
-pip install -r requirements-treino.txt
-```
-
-Execute:
-
-```bash
-python train_lora.py
-```
-
-O treinamento gera o adaptador LoRA, armazenado em:
+A API ficará disponível em:
 
 ```text
-adapters/
-└── instagram/
+http://127.0.0.1:8000
 ```
 
-Para utilizar o adaptador, selecione `LLM_PROVIDER=llama` no `.env` e execute:
-
-```bash
-python main.py
-```
-
-**Importante:** o treinamento LoRA é realizado para o modelo Llama configurado no projeto. Caso o modelo base seja alterado, será necessário verificar a compatibilidade do adaptador e, normalmente, realizar um novo treinamento.
-
-## Regras e boas práticas
-
-- **Embeddings:** se o modelo de embeddings mudar, apague a pasta `db/` e execute novamente `python index.py`.
-- **Chunking:** alterações no tamanho dos chunks ou na sobreposição também exigem a reconstrução do índice.
-- **Prompt:** alterações no `SYSTEM_PROMPT` em `prompt.py` devem ser avaliadas. Se modificarem significativamente o comportamento esperado, revise os exemplos e considere retreinar o LoRA.
-- **LoRA:** o adaptador deve ser utilizado exclusivamente com o modelo base compatível com o treinamento.
-- **Gemini:** requer conexão com a internet e uma chave de API válida.
-- **Segurança:** nunca versione arquivos `.env`, credenciais ou dados sensíveis.
-- **Revisão humana:** valide os conteúdos antes de utilizá-los ou publicá-los.
-
-## Estrutura do projeto
+A documentação interativa da API pode ser acessada em:
 
 ```text
-rag_posts/
-│
-├── adapters/
-│   └── instagram/          # Adaptador LoRA treinado
-│
-├── base/                   # PDFs da base de conhecimento
-│
-├── data/
-│   └── exemplos.jsonl      # Exemplos revisados
-│
-├── db/                     # Banco vetorial ChromaDB
-│
-├── .env                    # Variáveis de ambiente
-├── .gitignore
-├── config.py
-├── embeddings.py
-├── index.py
-├── retriever.py
-├── prompt.py
-├── llm.py
-├── validate.py
-├── pipeline.py
-├── main.py
-├── train_lora.py
-├── requirements.txt
-└── requirements-treino.txt
+http://127.0.0.1:8000/docs
 ```
+
+### 2. Iniciar o frontend
+
+Na raiz do projeto:
+
+```bash
+npm run dev
+```
+
+A aplicação ficará disponível em:
+
+```text
+http://localhost:3000
+```
+
+## Gerenciamento de documentos
+
+Cada agente pode possuir documentos associados à sua base de conhecimento.
+
+O gerenciamento é realizado pela interface ou pelos endpoints da API.
+
+| Método | Endpoint | Responsabilidade |
+|---|---|---|
+| GET | `/api/agents/{agent_id}/documents` | Lista documentos do agente |
+| POST | `/api/agents/{agent_id}/documents` | Envia documentos |
+| DELETE | `/api/agents/{agent_id}/documents/{document_id}` | Exclui um documento |
+| POST | `/api/agents/{agent_id}/documents/{document_id}/index` | Indexa ou reindexa um documento |
+
+### Status dos documentos
+
+Os documentos possuem estados de processamento que permitem acompanhar a indexação:
+
+- `uploaded`: documento enviado e registrado.
+- `processing`: documento em processamento.
+- `indexed`: documento indexado com sucesso.
+- `error`: ocorreu um erro durante o processamento.
+
+A indexação individual permite atualizar o conteúdo de um documento sem executar a indexação completa de todos os arquivos da base.
+
+## Recuperação de informações (RAG)
+
+O mecanismo RAG utiliza embeddings para representar os documentos em formato vetorial.
+
+Quando o usuário envia uma pergunta, o sistema:
+
+1. Converte a consulta em uma representação vetorial.
+2. Busca os chunks semanticamente relevantes.
+3. Recupera o conteúdo associado à consulta.
+4. Incorpora o contexto recuperado ao prompt.
+5. Encaminha o prompt ao modelo de linguagem.
+6. Retorna a resposta gerada pelo agente.
+
+A separação por escopo das bases de conhecimento permite manter o isolamento entre os documentos dos diferentes agentes.
+
+## Banco de dados
+
+O projeto utiliza duas estratégias complementares de armazenamento:
+
+**SQLite**
+
+Responsável pelos dados estruturados, como:
+
+- Cadastro e configuração dos agentes.
+- Metadados dos documentos.
+- Caminhos dos arquivos.
+- Status de processamento.
+- Informações de gerenciamento.
+
+**ChromaDB**
+
+Responsável pelo armazenamento dos embeddings e dos chunks utilizados na recuperação semântica.
+
+Cada base individual possui seu próprio diretório de armazenamento vetorial.
+
+## Segurança e boas práticas
+
+- Não versione arquivos `.env` ou credenciais.
+- Nunca exponha chaves de API no frontend ou no repositório.
+- Preserve os bancos de dados e documentos utilizados pelo sistema.
+- Mantenha o isolamento entre as bases de conhecimento dos agentes.
+- Valide os arquivos enviados antes do processamento.
+- Monitore os erros de indexação e recuperação.
+- Utilize variáveis de ambiente para configurações sensíveis.
 
 ## Objetivo do projeto
 
-Desenvolver um sistema de geração de conteúdo contextualizado, capaz de recuperar informações de uma base documental própria e produzir posts alinhados ao tom e às diretrizes estabelecidas.
+Desenvolver uma plataforma modular de agentes inteligentes, capaz de combinar modelos de linguagem com bases documentais próprias por meio de RAG.
 
-A arquitetura também permite comparar diferentes abordagens de geração, avaliando modelos locais com fine-tuning LoRA e modelos comerciais acessados por API, considerando qualidade das respostas, fidelidade ao contexto, latência e custos de execução.
+O AgentLab busca oferecer flexibilidade na escolha dos provedores de LLM, isolamento das bases de conhecimento, gerenciamento documental e recuperação contextualizada de informações.
+
+A arquitetura permite evoluir para novos recursos, como avaliação de respostas, rastreabilidade das fontes recuperadas, observabilidade, otimização de prompts e treinamento especializado de modelos.

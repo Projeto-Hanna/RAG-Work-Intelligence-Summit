@@ -150,6 +150,24 @@ def obter_documento_por_id(agent_id: str, document_id: int):
 
     return resultado
 
+
+def listar_documentos_por_agente(agent_id: str):
+    """Lista os documentos cadastrados para um agente."""
+
+    with conectar() as conexao:
+        resultados = conexao.execute(
+            """
+            SELECT id, agent_id, filename, filepath, status
+            FROM documents
+            WHERE agent_id = ?
+            ORDER BY id DESC
+            """,
+            (agent_id,),
+        ).fetchall()
+
+    return resultados
+
+
 def cadastrar_ou_atualizar_documento(
     agent_id: str,
     filename: str,

@@ -3,17 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-  "dev": "concurrently -k -n FRONTEND,BACKEND \"npm:dev:frontend\" \"npm:dev:backend\"",
-  "dev:frontend": "next dev",
-  "dev:backend": "cd backend && .venv\\Scripts\\python.exe -m uvicorn webapp:app --reload --host 127.0.0.1 --port 8000",
-  "build": "next build",
-  "start": "next start"
+    "dev": "concurrently -k -n FRONTEND,BACKEND \"npm:dev:frontend\" \"npm:dev:backend\"",
+    "dev:frontend": "next dev",
+    "dev:backend": "cd backend && .venv\\Scripts\\python.exe -m uvicorn webapp:app --reload --host 127.0.0.1 --port 8000",
+    "build": "next build",
+    "start": "next start"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
     "next": "^15.5.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

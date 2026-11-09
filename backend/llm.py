@@ -265,6 +265,9 @@ class Gerador:
             ),
             max_output_tokens=max_novos_tokens,
             temperature=temperatura,
+            thinking_config=types.ThinkingConfig(
+                thinking_level="low"
+            ),
         )
 
         resposta = self.client.models.generate_content(
@@ -272,6 +275,15 @@ class Gerador:
             contents=historico,
             config=configuracao,
         )
+        
+        print("\n[DEBUG GEMINI] Finish reason:")
+        print(resposta.candidates[0].finish_reason)
+
+        print("\n[DEBUG GEMINI] Usage metadata:")
+        print(resposta.usage_metadata)
+
+        print("\n[DEBUG GEMINI] Prompt feedback:")
+        print(resposta.prompt_feedback)
 
         return (resposta.text or "").strip()
 

@@ -28,6 +28,8 @@ import {
   LockKeyhole,
 } from "lucide-react";
 
+import AnalyticsReportView from "./components/AnalyticsReportView";
+
 
 
 // ======================================================
@@ -58,9 +60,33 @@ type Screen =
 
 type Provider = "gemini" | "openai" | "anthropic" | "llama";
 
+type AnalyticsReport = {
+  title: string;
+  summary: string;
+  kpis: {
+    label: string;
+    value: number;
+    unit?: string | null;
+  }[];
+  charts: {
+    type: "bar" | "line";
+    title: string;
+    labels: string[];
+    values: number[];
+  }[];
+  insights: {
+    title: string;
+    description: string;
+    type: "positive" | "negative" | "neutral" | "attention";
+  }[];
+  sources: string[];
+  metadata?: Record<string, unknown>;
+};
+
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
+  report?: AnalyticsReport;
 };
 
 type AgentDocument = {
@@ -727,13 +753,13 @@ async function saveAgent() {
   const text = chatInput.trim();
 
   if (!text || !active || isSending) return;
+
   setLastActivityByAgent((previous) => ({
     ...previous,
     [active.id]: Date.now(),
   }));
 
-setSessionNotice("");
-
+  setSessionNotice("");
   setIsSending(true);
 
   try {
@@ -774,7 +800,10 @@ setSessionNotice("");
 
     setMessages((previous) => [
       ...previous,
-      { role: "assistant", text: `Erro: ${mensagem}` },
+      {
+        role: "assistant",
+        text: mensagem,
+      },
     ]);
   } finally {
     setIsSending(false);
@@ -842,15 +871,15 @@ try {
     );
   }
 
-  const resposta = data.sources?.length
-    ? `${data.response}\n\nFontes consultadas:\n${data.sources.join(
-        "\n"
-      )}`
-    : data.response;
+ const resposta = data.response || "";
 
   setMessages((previous) => [
     ...previous,
-    { role: "assistant", text: resposta },
+    {
+      role: "assistant",
+      text: resposta,
+      ...(data.report ? { report: data.report } : {}),
+    },
   ]);
 }
 
@@ -1847,13 +1876,21 @@ async function unlockAndSendMessage() {
                   </div>
                 ) : (
                   messages.map((message, index) => (
-                    <div
-                      className={`message ${message.role}`}
-                      key={index}
-                    >
-                      {message.text}
-                    </div>
-                  ))
+                  <div
+                    className={
+                      message.report
+                        ? "analytics-message"
+                        : `message ${message.role}`
+                    }
+                    key={index}
+                  >
+                    {message.text}
+
+                    {message.report && (
+                      <AnalyticsReportView report={message.report} />
+                    )}
+                  </div>
+                ))
                 )}
 
                 {isSending && (
@@ -2000,6 +2037,7 @@ async function unlockAndSendMessage() {
                                 data.detail || "Erro ao excluir documento."
                               );
                             }
+  
                             setDocumentSuccess("Documento excluído com sucesso!");
                             await carregarDocumentos(active.id);
 
