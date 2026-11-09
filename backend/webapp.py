@@ -1,5 +1,8 @@
 
 import json
+
+from api.documents import router as documents_router
+from database import inicializar_banco
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
@@ -11,9 +14,13 @@ from upload import router as upload_router
 from api.agents import router as agents_router
 
 app = FastAPI(title="RAG Post Studio")
+
+@app.on_event("startup")
+def iniciar_banco():
+  inicializar_banco()
 app.include_router(upload_router)
 app.include_router(agents_router)
-
+app.include_router(documents_router)
 
 @lru_cache(maxsize=2)
 def obter_pipeline(usar_lora: bool):

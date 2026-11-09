@@ -4,7 +4,8 @@ from agent.prompt import montar_mensagens
 from config import TOP_K
 from llm import Gerador
 from retriever import buscar, formatar_fontes
-
+from database import obter_tipo_base_agente
+from knowledge_base import obter_diretorios_base
 
 class AgentExecutor:
     """Executa agentes utilizando LLM e, opcionalmente, RAG."""
@@ -23,9 +24,17 @@ class AgentExecutor:
         resultados = []
 
         if agente.rag_enabled:
+            tipo_base = obter_tipo_base_agente(agente.id)
+
+            _, pasta_db = obter_diretorios_base(
+                agente.id,
+                tipo_base,
+            )
+
             resultados = buscar(
                 mensagem,
                 k=agente.top_k or TOP_K,
+                pasta_db=str(pasta_db),
             )
 
         trechos = [

@@ -16,6 +16,19 @@ PASTA_DB = RAIZ / "db"
 PASTA_ADAPTADORES = RAIZ / "adapters"
 ADAPTADOR_LORA = PASTA_ADAPTADORES / "instagram"
 ARQUIVO_EXEMPLOS = RAIZ / "data" / "exemplos.jsonl"
+PASTA_DATABASE = RAIZ / "database"
+ARQUIVO_DATABASE = PASTA_DATABASE / "agentlab.db"
+
+# Bases de conhecimento por agente
+PASTA_DATA = RAIZ / "data"
+
+PASTA_BASE_COMPARTILHADA = PASTA_DATA / "shared_test"
+PASTA_DOCUMENTOS_COMPARTILHADOS = (
+    PASTA_BASE_COMPARTILHADA / "documents"
+)
+PASTA_DB_COMPARTILHADO = PASTA_BASE_COMPARTILHADA / "chroma"
+
+PASTA_AGENTES = PASTA_DATA / "agents"
 
 # Indexação e recuperação (RAG)
 MODELO_EMBEDDINGS = "intfloat/multilingual-e5-small"

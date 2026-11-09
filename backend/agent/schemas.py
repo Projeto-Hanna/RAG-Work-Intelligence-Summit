@@ -32,3 +32,8 @@ class ChatRequest(BaseModel):
     ] = "gemini"
 
     api_key: SecretStr | None = None
+
+class AgentRegistration(BaseModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=100)
+    knowledge_base_type: Literal["test", "custom"] = "test"

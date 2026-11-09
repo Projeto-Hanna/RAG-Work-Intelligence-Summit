@@ -1,11 +1,11 @@
 import logging
-
 from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException
 
 from agent.executor import AgentExecutor
-from agent.schemas import ChatRequest
+from agent.schemas import ChatRequest, AgentRegistration
+from database import cadastrar_agente
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,22 @@ def obter_executor():
     """Reutiliza o executor entre as requisições."""
     return AgentExecutor()
 
+@router.post("/register")
+def registrar_agente(request: AgentRegistration):
+    try:
+        cadastrar_agente(
+            request.id,
+            request.name,
+            request.knowledge_base_type,
+        )
+        return {"message": "Agente cadastrado com sucesso."}
 
+    except Exception:
+        logger.exception("Erro ao cadastrar agente.")
+        raise HTTPException(
+            status_code=500,
+            detail="Erro ao cadastrar agente.",
+        )
 @router.post("/chat")
 def conversar(request: ChatRequest):
     """Recebe uma mensagem e retorna a resposta do agente."""

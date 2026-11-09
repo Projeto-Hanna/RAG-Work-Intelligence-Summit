@@ -10,6 +10,7 @@ import {
   Bot,
   Plus,
   House,
+  Files,
   Sparkles,
   MessageCircle,
   Download,
@@ -41,6 +42,7 @@ type Agent = {
   instructions: string;
   provider: Provider;
   createdAt: string;
+  knowledgeBaseType: "test" | "custom";
 };
 
 type Screen =
@@ -51,6 +53,7 @@ type Screen =
   | "review"
   | "chat"
   | "export"
+  | "documents"
   | "connection";
 
 type Provider = "gemini" | "openai" | "anthropic" | "llama";
@@ -58,6 +61,15 @@ type Provider = "gemini" | "openai" | "anthropic" | "llama";
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
+};
+
+type AgentDocument = {
+  id: number;
+  nome: string;
+  status: string;
+  data_criacao: string;
+  tamanho: number;
+
 };
 
 // ======================================================
@@ -86,6 +98,7 @@ const initial: Agent = {
   instructions: "",
   provider: "gemini",
   createdAt: "",
+  knowledgeBaseType: "test",
 };
 
 const prompts = [
@@ -133,6 +146,25 @@ function generateId(): string {
 // COMPONENTE PRINCIPAL
 // ======================================================
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
+function formatarTamanho(bytes: number): string {
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatarData(data: string): string {
+  const dataFormatada = new Date(data);
+
+  if (Number.isNaN(dataFormatada.getTime())) {
+    return data;
+  }
+
+  return dataFormatada.toLocaleString("pt-BR");
+}
+
 export default function Home() {
   // Navegação
   const [screen, setScreen] = useState<Screen>("home");
@@ -150,6 +182,126 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+
+  // Documentos
+  const [documents, setDocuments] = useState<AgentDocument[]>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
+  const [documentError, setDocumentError] = useState("");
+  const [documentSuccess, setDocumentSuccess] = useState("");
+  const [indexingDocumentId, setIndexingDocumentId] = useState<number | null>(null);
+
+  async function carregarDocumentos(agentId: string) {
+    setIsLoadingDocuments(true);
+    setDocumentError("");
+
+    try {
+      const response = await fetch(
+        `/api/agents/${agentId}/documents`,
+        { cache: "no-store" }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.detail || "Erro ao carregar documentos."
+        );
+      }
+
+      setDocuments(data.documentos || []);
+    } catch (error) {
+      setDocumentError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível carregar os documentos."
+      );
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  }
+
+  async function enviarDocumentos(files: FileList | null) {
+  if (!files || !active || files.length === 0) return;
+
+  setIsUploadingDocuments(true);
+  setDocumentError("");
+  setDocumentSuccess("");
+
+  try {
+    const formData = new FormData();
+
+    Array.from(files).forEach((file) => {
+      formData.append("files", file);
+    });
+
+    const response = await fetch(
+      `/api/agents/${active.id}/documents`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Erro ao enviar documentos."
+      );
+    }
+
+    setDocumentSuccess("Documentos enviados com sucesso!");
+    await carregarDocumentos(active.id);
+  } catch (error) {
+    setDocumentError(
+      error instanceof Error
+        ? error.message
+        : "Não foi possível enviar os documentos."
+    );
+  } finally {
+    setIsUploadingDocuments(false);
+  }
+}
+
+async function indexarDocumento(documentId: number) {
+  if (!active || indexingDocumentId !== null) return;
+
+  setIndexingDocumentId(documentId);
+  setDocumentError("");
+  setDocumentSuccess("");
+
+  try {
+    const response = await fetch(
+      `/api/agents/${active.id}/documents/${documentId}/index`,
+      { method: "POST" }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Erro ao indexar documento."
+      );
+    }
+
+    setDocumentSuccess(
+      `Documento "${data.document_id}" indexado com sucesso!`
+    );
+
+    await carregarDocumentos(active.id);
+  } catch (error) {
+    setDocumentError(
+      error instanceof Error
+        ? error.message
+        : "Não foi possível indexar o documento."
+    );
+
+    await carregarDocumentos(active.id);
+  } finally {
+    setIndexingDocumentId(null);
+  }
+}
 
   // Provedor de IA
   const [provider, setProvider] = useState<Provider>("gemini");
@@ -453,7 +605,7 @@ useEffect(() => {
     }
   }
 
-  async function saveAgent() {
+async function saveAgent() {
   try {
     const agent: Agent = {
       ...draft,
@@ -483,6 +635,27 @@ useEffect(() => {
       );
     }
 
+    // Registra o agente no SQLite pelo backend.
+    const response = await fetch("/api/agents/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: agent.id,
+        name: agent.name,
+        knowledge_base_type: agent.knowledgeBaseType,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Não foi possível registrar o agente no banco."
+      );
+    }
+
     setAgents((previous) => [
       agent,
       ...previous.filter((item) => item.id !== agent.id),
@@ -498,7 +671,7 @@ useEffect(() => {
     alert(
       error instanceof Error
         ? error.message
-        : "Não foi possível salvar as credenciais."
+        : "Não foi possível salvar o agente."
     );
   }
 }
@@ -650,7 +823,18 @@ async function executeMessage(
     }),
   });
 
-  const data = await response.json();
+  const responseText = await response.text();
+
+let data;
+
+try {
+  data = JSON.parse(responseText);
+} catch {
+  console.error("Resposta não JSON:", responseText);
+  throw new Error(
+    `O servidor retornou uma resposta inválida (HTTP ${response.status}). Verifique o console.`
+  );
+}
 
   if (!response.ok) {
     throw new Error(
@@ -977,6 +1161,19 @@ async function unlockAndSendMessage() {
                         >
                           Conversar
                           <ArrowRight size={16} />
+                        </button>
+
+                        <button
+                          className="secondary"
+                          onClick={() => {
+                            setSelected(agent.id);
+                            setDocuments([]);
+                            carregarDocumentos(agent.id);
+                            setScreen("documents");
+                          }}
+                        >
+                          <Files size={16} />
+                          Documentos
                         </button>
 
                         <button
@@ -1369,6 +1566,23 @@ async function unlockAndSendMessage() {
               </div>
 
               {/* SELEÇÃO DO PROVEDOR */}
+              <div className="form-group">
+                <label htmlFor="knowledgeBaseType">Base de conhecimento</label>
+
+                <select
+                  id="knowledgeBaseType"
+                  value={draft.knowledgeBaseType}
+                  onChange={(e) =>
+                    setDraft((current) => ({
+                      ...current,
+                      knowledgeBaseType: e.target.value as "test" | "custom",
+                    }))
+                  }
+                >
+                  <option value="test">Base compartilhada de teste</option>
+                  <option value="custom">Base própria do agente</option>
+                </select>
+              </div>
 
               <div className="form-card">
 
@@ -1687,6 +1901,126 @@ async function unlockAndSendMessage() {
 
             </div>
           )}
+
+          {screen === "documents" && active && (
+            <section className="workspace">
+              <div className="section-heading">
+                <button
+                  className="secondary"
+                  onClick={() => setScreen("home")}
+                >
+                  <ArrowLeft size={16} />
+                  Voltar
+                </button>
+
+                <h2>Documentos — {active.name}</h2>
+                <p>Gerencie os documentos da base de conhecimento deste agente.</p>
+              </div>
+
+              <div className="form-card">
+                <label htmlFor="document-upload">
+                  Adicionar documentos (PDF, CSV, XLSX ou JSON)
+                </label>
+
+                <input
+                  id="document-upload"
+                  type="file"
+                  accept=".pdf,.csv,.xlsx,.json"
+                  multiple
+                  disabled={isUploadingDocuments}
+                  onChange={(e) => {
+                    enviarDocumentos(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+
+                {isUploadingDocuments && (
+                  <p className="success">{documentSuccess}</p>
+                )}
+              </div>
+
+              {isLoadingDocuments ? (
+                <p>Carregando documentos...</p>
+              ) : documentError ? (
+                <p className="error">{documentError}</p>
+              ) : documents.length === 0 ? (
+                <p>Nenhum documento cadastrado.</p>
+              ) : (
+                <div className="document-list">
+                  {documents.map((document) => (
+                    <div className="document-item" key={document.id}>
+                      <div>
+                        <strong>{document.nome}</strong>
+                        <p>
+                          {formatarTamanho(document.tamanho)} · Status: {document.status}
+                        </p>
+                        <p>
+                          Enviado em: {formatarData(document.data_criacao)}
+                        </p>
+                        </div>
+                        <button
+                          className="secondary"
+                          onClick={() => indexarDocumento(document.id)}
+                          disabled={
+                            indexingDocumentId !== null ||
+                            document.status === "processing"
+                          }
+                        >
+                          {indexingDocumentId === document.id
+                            ? "Indexando..."
+                            : document.status === "indexed"
+                            ? "Reindexar"
+                            : "Indexar"}
+                        </button>
+                      <button
+                        className="icon-button"
+                        title="Excluir documento"
+                        aria-label={`Excluir ${document.nome}`}
+                        onClick={async () => {
+                          const confirmed = confirm(
+                            `Deseja excluir o documento ${document.nome}?`
+                          );
+
+                          if (!confirmed) return;
+
+                          setDocumentError("");
+                          setDocumentSuccess("");
+
+
+                          try {
+                            const response = await fetch(
+                              `/api/agents/${active.id}/documents?documentId=${document.id}`,
+                              { method: "DELETE" }
+                            );
+
+                            const data = await response.json();
+
+                            if (!response.ok) {
+                              throw new Error(
+                                data.detail || "Erro ao excluir documento."
+                              );
+                            }
+                            setDocumentSuccess("Documento excluído com sucesso!");
+                            await carregarDocumentos(active.id);
+
+                          } catch (error) {
+                            setDocumentError(
+                              error instanceof Error
+                                ? error.message
+                                : "Não foi possível excluir o documento."
+                            );
+                          }
+                        }}
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           <button
             className="secondary"
             onClick={lockCredentials}

@@ -7,6 +7,18 @@ Execute sempre que os arquivos da pasta base/ mudarem:
 
 import json
 import re
+import hashlib
+from database import (
+    cadastrar_agente,
+    cadastrar_ou_atualizar_documento,
+    registrar_documento,
+    atualizar_status_documento,
+    obter_tipo_base_agente,
+    obter_documento_por_id,
+
+)
+
+from knowledge_base import obter_diretorios_base
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -23,58 +35,210 @@ from embeddings import get_embeddings
 
 EXTENSOES_SUPORTADAS = {".pdf", ".csv", ".xlsx", ".json"}
 
+def criar_db(agent_id: str):
+    tipo_base = obter_tipo_base_agente(agent_id)
 
-def criar_db():
-    documentos = carregar_documentos()
+    if tipo_base == "test":
+        cadastrar_agente(
+            agent_id="shared_test",
+            name="Base Compartilhada de Testes",
+            knowledge_base_type="test",
+        )
 
-    print(f"Documentos carregados: {len(documentos)}")
+    pasta_base, pasta_db = obter_diretorios_base(agent_id, tipo_base)
+    pasta_base.mkdir(parents=True, exist_ok=True)
 
-    if not documentos:
-        print(f"Nenhum documento compatível encontrado em '{PASTA_BASE}'.")
+    arquivos = sorted(
+        arquivo for arquivo in pasta_base.iterdir()
+        if arquivo.is_file()
+        and not arquivo.is_symlink()
+        and arquivo.suffix.lower() in EXTENSOES_SUPORTADAS
+    )
+
+    if not arquivos:
+        print("Nenhum documento encontrado para indexação.")
         return
 
-    chunks = dividir_chunks(documentos)
+    agente_documentos_id = "shared_test" if tipo_base == "test" else agent_id
+    escopo_base = "shared_test" if tipo_base == "test" else agent_id
 
-    print(f"Chunks criados: {len(chunks)}")
+    sucessos = 0
+    erros = []
 
-    vetorizar_chunks(chunks)
+    for arquivo in arquivos:
+        document_id = None
+
+        try:
+            document_id = cadastrar_ou_atualizar_documento(
+                agent_id=agente_documentos_id,
+                filename=arquivo.name,
+                filepath=str(arquivo.resolve()),
+                status="processing",
+            )
+
+            documentos = carregar_arquivo(arquivo)
+            chunks = dividir_chunks(documentos)
+
+            if not chunks:
+                raise RuntimeError(
+                    f"Nenhum chunk foi gerado para {arquivo.name}."
+                )
+
+            vetorizar_chunks(chunks, pasta_db, escopo_base)
+
+            atualizar_status_documento(document_id, "indexed")
+            sucessos += 1
+
+            print(f"Documento indexado: {arquivo.name}")
+
+        except Exception as erro:
+            if document_id is not None:
+                atualizar_status_documento(document_id, "error")
+
+            erros.append((arquivo.name, str(erro)))
+            print(f"Erro ao indexar {arquivo.name}: {erro}")
+
+    print("\nResumo da indexação:")
+    print(f"Documentos indexados: {sucessos}")
+    print(f"Documentos com erro: {len(erros)}")
+
+    if erros:
+        detalhes = "\n".join(
+            f"- {nome}: {mensagem}" for nome, mensagem in erros
+        )
+        raise RuntimeError(
+            f"Falha ao indexar {len(erros)} documento(s):\n{detalhes}"
+        )
+
+    print("Indexação concluída com sucesso.")
+
+def indexar_documento(agent_id: str, document_id: int):
+    """Indexa individualmente um documento cadastrado."""
+
+    tipo_base = obter_tipo_base_agente(agent_id)
+
+    agente_documentos_id = (
+        "shared_test" if tipo_base == "test" else agent_id
+    )
+
+    pasta_base, pasta_db = obter_diretorios_base(
+        agent_id,
+        tipo_base,
+    )
+
+    documento = obter_documento_por_id(
+        agente_documentos_id,
+        document_id,
+    )
+
+    if documento is None:
+        raise ValueError("Documento não encontrado.")
+
+    arquivo = Path(documento["filepath"])
+
+    # Valida o caminho e impede acesso fora da pasta documental.
+    pasta_base_resolvida = pasta_base.resolve()
+
+    if arquivo.is_symlink():
+        raise ValueError("Não é permitido indexar links simbólicos.")
+
+    arquivo_resolvido = arquivo.resolve()
+
+    if arquivo_resolvido.parent != pasta_base_resolvida:
+        raise ValueError("Caminho do documento inválido.")
+
+    if not arquivo_resolvido.is_file():
+        raise FileNotFoundError("Arquivo não encontrado.")
+
+    if arquivo_resolvido.suffix.lower() not in EXTENSOES_SUPORTADAS:
+        raise ValueError("Extensão de arquivo não suportada.")
+
+    escopo_base = agente_documentos_id
+
+    atualizar_status_documento(document_id, "processing")
+
+    try:
+        documentos = carregar_arquivo(arquivo_resolvido)
+        chunks = dividir_chunks(documentos)
+
+        if not chunks:
+            raise RuntimeError("Nenhum chunk foi gerado.")
+
+        vetorizar_chunks(
+            chunks,
+            pasta_db,
+            escopo_base,
+        )
+
+        atualizar_status_documento(document_id, "indexed")
+
+        return {
+            "message": "Documento indexado com sucesso.",
+            "document_id": document_id,
+            "status": "indexed",
+        }
+
+    except Exception:
+        atualizar_status_documento(document_id, "error")
+        raise
+
+def carregar_arquivo(arquivo: Path):
+    """Carrega individualmente um arquivo compatível."""
+
+    print(f"Processando: {arquivo.name}")
+
+    extensao = arquivo.suffix.lower()
+
+    try:
+        if extensao == ".pdf":
+            documentos = carregar_pdf(arquivo)
+
+        elif extensao == ".csv":
+            documentos = carregar_csv(arquivo)
+
+        elif extensao == ".xlsx":
+            documentos = carregar_xlsx(arquivo)
+
+        elif extensao == ".json":
+            documentos = carregar_json(arquivo)
+
+        else:
+            raise ValueError(
+                f"Extensão não suportada: {extensao}"
+            )
+
+        if not documentos:
+            raise RuntimeError(
+                f"Nenhum conteúdo foi extraído de {arquivo.name}."
+            )
+
+        return documentos
+
+    except Exception as erro:
+        raise RuntimeError(
+            f"Erro ao processar {arquivo.name}: {erro}"
+        ) from erro
 
 
-def carregar_documentos():
+def carregar_documentos(pasta_base: Path):
+    """Carrega todos os documentos compatíveis de uma pasta."""
+
     documentos = []
 
-    if not PASTA_BASE.exists():
-        print(f"Pasta não encontrada: {PASTA_BASE}")
+    if not pasta_base.exists():
+        print(f"Pasta não encontrada: {pasta_base}")
         return documentos
 
     arquivos = sorted(
         arquivo
-        for arquivo in PASTA_BASE.iterdir()
+        for arquivo in pasta_base.iterdir()
         if arquivo.is_file()
         and not arquivo.is_symlink()
         and arquivo.suffix.lower() in EXTENSOES_SUPORTADAS
     )
 
     for arquivo in arquivos:
-        print(f"Processando: {arquivo.name}")
-
-        try:
-            extensao = arquivo.suffix.lower()
-
-            if extensao == ".pdf":
-                documentos.extend(carregar_pdf(arquivo))
-
-            elif extensao == ".csv":
-                documentos.extend(carregar_csv(arquivo))
-
-            elif extensao == ".xlsx":
-                documentos.extend(carregar_xlsx(arquivo))
-
-            elif extensao == ".json":
-                documentos.extend(carregar_json(arquivo))
-
-        except Exception as erro:
-            print(f"Erro ao processar {arquivo.name}: {erro}")
+        documentos.extend(carregar_arquivo(arquivo))
 
     return documentos
 
@@ -85,7 +249,13 @@ def carregar_pdf(arquivo):
         glob=arquivo.name
     )
 
-    return carregador.load()
+    documentos = carregador.load()
+
+    for documento in documentos:
+        documento.metadata["source"] = arquivo.name
+        documento.metadata["tipo"] = "pdf"
+
+    return documentos
 
 
 def normalizar_numero(valor):
@@ -370,30 +540,148 @@ def dividir_chunks(documentos):
         add_start_index=True
     )
 
-    return separador_documentos.split_documents(documentos)
+    chunks = separador_documentos.split_documents(documentos)
 
+    for chunk in chunks:
+        source = chunk.metadata.get("source", "desconhecido")
+        start_index = chunk.metadata.get("start_index", 0)
 
-def vetorizar_chunks(chunks):
-    embeddings = get_embeddings()
-
-    # Novo banco separado: preserva o banco original.
-    pasta_db_nova = PASTA_DB.parent / "db_reconstruido"
-
-    if pasta_db_nova.exists():
-        raise FileExistsError(
-            f"A pasta {pasta_db_nova} já existe. "
-            "Verifique seu conteúdo antes de continuar."
+        chunk.metadata["chunk_id"] = (
+            f"{source}:{start_index}"
         )
 
-    Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        persist_directory=str(pasta_db_nova),
-        collection_name="langchain"
+    return chunks
+
+
+def vetorizar_chunks(chunks, pasta_db: Path, escopo_base: str):
+    from collections import defaultdict
+
+    embeddings = get_embeddings()
+
+    pasta_db.mkdir(parents=True, exist_ok=True)
+
+    db = Chroma(
+        persist_directory=str(pasta_db),
+        embedding_function=embeddings,
+        collection_name="langchain",
     )
 
-    print(f"Novo banco vetorial criado em: {pasta_db_nova}")
+    # Adiciona o escopo aos metadados.
+    for chunk in chunks:
+        chunk.metadata["base_scope"] = escopo_base
 
+    # Agrupa os chunks por arquivo.
+    chunks_por_fonte = defaultdict(list)
+
+    for chunk in chunks:
+        fonte = chunk.metadata["source"]
+        chunks_por_fonte[fonte].append(chunk)
+
+    for fonte, chunks_fonte in chunks_por_fonte.items():
+        print(f"Atualizando: {fonte}")
+
+        filtro = {
+            "$and": [
+                {"source": {"$eq": fonte}},
+                {"base_scope": {"$eq": escopo_base}},
+            ]
+        }
+
+        # Gera os IDs dos novos chunks.
+        ids = []
+
+        for chunk in chunks_fonte:
+            identificador = {
+                "metadata": chunk.metadata,
+                "content": chunk.page_content,
+            }
+
+            conteudo_id = json.dumps(
+                identificador,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            )
+
+            ids.append(
+                hashlib.sha256(
+                    conteudo_id.encode("utf-8")
+                ).hexdigest()
+            )
+
+        # Calcula os embeddings antes de modificar a base.
+        vetores = embeddings.embed_documents(
+            [chunk.page_content for chunk in chunks_fonte]
+        )
+
+        # Recupera os registros antigos para backup.
+        backup = db.get(
+            where=filtro,
+            include=["embeddings", "documents", "metadatas"],
+        )
+
+        try:
+            # Remove os registros antigos do arquivo e escopo.
+            db.delete(where=filtro)
+
+            # Insere os novos registros.
+            db._collection.upsert(
+                ids=ids,
+                embeddings=vetores,
+                documents=[
+                    chunk.page_content for chunk in chunks_fonte
+                ],
+                metadatas=[
+                    chunk.metadata for chunk in chunks_fonte
+                ],
+            )
+
+            print(f"Arquivo atualizado: {fonte}")
+
+        except Exception as erro:
+            print(f"Erro ao atualizar {fonte}. Tentando restaurar backup...")
+
+            try:
+                # Remove possíveis registros inseridos parcialmente.
+                db.delete(where=filtro)
+
+                # Restaura os registros anteriores.
+                if backup["ids"]:
+                    db._collection.upsert(
+                        ids=backup["ids"],
+                        embeddings=backup["embeddings"],
+                        documents=backup["documents"],
+                        metadatas=backup["metadatas"],
+                    )
+
+                print(f"Backup restaurado: {fonte}")
+
+            except Exception as erro_restauracao:
+                raise RuntimeError(
+                    f"Falha ao atualizar '{fonte}' e também ao "
+                    f"restaurar o backup. Erro original: {erro}. "
+                    f"Erro na restauração: {erro_restauracao}"
+                ) from erro_restauracao
+
+            raise RuntimeError(
+                f"Falha ao atualizar '{fonte}'. "
+                "Os registros anteriores foram restaurados."
+            ) from erro
+
+    print(f"Banco vetorial atualizado em: {pasta_db}")
 
 if __name__ == "__main__":
-    criar_db()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Indexa documentos na base de conhecimento de um agente."
+    )
+
+    parser.add_argument(
+        "agent_id",
+        help="Identificador do agente que receberá a indexação.",
+    )
+
+    args = parser.parse_args()
+
+    criar_db(args.agent_id)
