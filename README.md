@@ -1,71 +1,175 @@
-# AgentLab — Protótipo v0.1
+# AgentLab — Plataforma de Agentes de IA com RAG
 
-Aplicação web responsiva desenvolvida para a oficina **Crie seu próprio agente de IA**, do Work Intelligence Summit.
+Plataforma para criação e gerenciamento de agentes de inteligência artificial, com integração a diferentes provedores de LLM e sistemas de Retrieval-Augmented Generation (RAG).
 
-O AgentLab permite criar, configurar e testar agentes de IA, selecionando diferentes provedores de modelos de linguagem (LLMs).
+O **AgentLab** permite configurar agentes com instruções próprias, conectar bases de conhecimento documentais e gerar respostas contextualizadas a partir de informações recuperadas por busca semântica.
 
-## Funcionalidades
+A arquitetura combina uma interface web, uma API em Python, armazenamento relacional de metadados e bancos vetoriais independentes para gerenciamento do conhecimento de cada agente.
 
-- Dashboard responsivo e adaptado para dispositivos móveis.
-- Criação guiada de agentes por meio de perguntas.
-- Configuração manual de agentes, incluindo nome, propósito, tom e instruções.
-- Revisão e edição das instruções dos agentes.
-- Salvamento e exclusão de agentes no `localStorage` do navegador.
-- Chat integrado ao backend para execução de conversas com modelos de IA.
-- Seleção entre diferentes provedores de LLM.
-- Suporte a Gemini, OpenAI, Anthropic e modelos locais via Llama.
-- Configuração de API Key para provedores que exigem autenticação.
-- Exportação da configuração dos agentes em JSON.
+## Arquitetura
+
+O sistema é dividido em duas camadas principais:
+
+### Frontend
+
+Aplicação web desenvolvida com Next.js, React e TypeScript, responsável pela interface de gerenciamento e interação com os agentes.
+
+### Backend
+
+API desenvolvida com FastAPI e Python, responsável pela execução dos agentes, processamento documental, recuperação de contexto e integração com os provedores de modelos de linguagem.
+
+### Fluxo de processamento documental
+
+```text
+Upload de documentos
+        ↓
+Validação e armazenamento
+        ↓
+Extração do conteúdo
+        ↓
+Divisão em chunks
+        ↓
+Geração de embeddings
+        ↓
+Armazenamento no ChromaDB
+```
+
+### Fluxo de geração de respostas
+
+```text
+Pergunta do usuário
+        ↓
+Identificação do agente
+        ↓
+Retriever (busca semântica)
+        ↓
+Recuperação dos chunks relevantes
+        ↓
+Construção do prompt com contexto
+        ↓
+LLM
+        ↓
+Resposta contextualizada
+```
+
+## Principais funcionalidades
+
+- **Gerenciamento de agentes:** criação, configuração e utilização de agentes com instruções específicas.
+- **Múltiplos provedores de LLM:** integração com diferentes provedores, incluindo Gemini, OpenAI, Anthropic e modelos locais, conforme a configuração disponível.
+- **RAG:** recuperação de informações relevantes em bases documentais para fundamentar as respostas.
+- **Gerenciamento documental:** upload, listagem e exclusão de documentos associados aos agentes.
+- **Indexação individual:** processamento e indexação de documentos de forma independente, sem exigir a reconstrução completa da base.
+- **Reindexação:** atualização dos vetores de um documento já indexado.
+- **Bases de conhecimento:** suporte a uma base compartilhada de testes e bases individuais por agente.
+- **Persistência:** armazenamento de metadados e informações dos agentes em SQLite e vetores no ChromaDB.
+
+## Gerenciamento das bases de conhecimento
+
+O AgentLab trabalha com dois tipos de bases:
+
+| Tipo | Descrição |
+|---|---|
+| `test` | Utiliza uma base de conhecimento compartilhada entre os agentes configurados nesse modo. |
+| `custom` | Mantém uma base de conhecimento individual para cada agente. |
+
+Na modalidade individual, cada agente possui seus próprios documentos e seu próprio banco vetorial.
+
+O escopo de recuperação é utilizado para evitar que informações de uma base sejam recuperadas indevidamente por outra.
+
+### Formatos de documentos suportados
+
+- PDF
+- CSV
+- XLSX
+- JSON
+
+O limite de upload implementado é de 50 MB por arquivo.
 
 ## Tecnologias
 
-### Frontend
-- Node.js 20.9+ (recomendado: Node.js 22).
-- Next.js 15.
-- React 19.
-- TypeScript.
-- npm.
+| Categoria | Tecnologias |
+|---|---|
+| Linguagem | Python, TypeScript |
+| Frontend | Next.js, React |
+| Backend | FastAPI |
+| Banco relacional | SQLite |
+| Banco vetorial | ChromaDB |
+| RAG | LangChain |
+| Embeddings | Sentence Transformers |
+| LLMs | Gemini, OpenAI, Anthropic e modelos locais |
+| Versionamento | Git e GitHub |
 
-### Backend
-- Python 3.10+.
-- FastAPI.
-- Uvicorn.
-- Integrações com os provedores de LLM.
-- ChromaDB e modelos de embeddings para funcionalidades de RAG.
+## Estrutura do projeto
 
-## Pré-requisitos
-
-- Node.js 20.9 ou superior.
-- npm.
-- Python 3.10 ou superior.
-- Ambiente virtual Python configurado.
-- Chaves de API dos provedores que exigem autenticação.
-
-## Executar localmente
-
-O frontend e o backend são iniciados simultaneamente por meio de um único comando.
-
-### 1. Instalar dependências do frontend
-
-Na raiz do projeto:
-
-```bash
-npm install
+```text
+RAG-Work-Intelligence-Summit/
+│
+├── app/
+│   ├── api/
+│   │   └── agents/
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+│
+├── backend/
+│   ├── agent/
+│   │   ├── executor.py
+│   │   └── schemas.py
+│   │
+│   ├── api/
+│   │   ├── agents.py
+│   │   └── documents.py
+│   │
+│   ├── database/
+│   │   └── agentlab.db
+│   │
+│   ├── data/
+│   │   └── agents/
+│   │
+│   ├── config.py
+│   ├── database.py
+│   ├── embeddings.py
+│   ├── index.py
+│   ├── knowledge_base.py
+│   ├── retriever.py
+│   └── webapp.py
+│
+├── package.json
+├── requirements.txt
+└── README.md
 ```
 
-### 2. Configurar o ambiente Python
+## Configuração inicial
 
-Acesse a pasta do backend:
+### 1. Clonar o repositório
+
+```bash
+git clone https://github.com/dev-Burandelei/RAG-Work-Intelligence-Summit.git
+cd RAG-Work-Intelligence-Summit
+```
+
+### 2. Configurar o backend
+
+Entre na pasta do backend:
 
 ```bash
 cd backend
 ```
 
-Crie e ative o ambiente virtual, caso ainda não exista:
+Crie e ative o ambiente virtual:
+
+**Windows (PowerShell):**
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
+```
+
+**Linux / macOS:**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
 ```
 
 Instale as dependências:
@@ -74,27 +178,43 @@ Instale as dependências:
 pip install -r requirements.txt
 ```
 
-Retorne à raiz do projeto:
+Configure as variáveis de ambiente conforme os provedores de LLM habilitados no arquivo de configuração do projeto.
+
+### 3. Configurar o frontend
+
+Na raiz do projeto:
 
 ```bash
-cd ..
+npm install
 ```
 
-### 3. Configurar variáveis de ambiente
+Configure as variáveis de ambiente necessárias para a comunicação entre o frontend e o backend.
 
-Configure os arquivos `.env` conforme as variáveis esperadas pelo backend e pelo frontend.
+## Execução
 
-No backend, configure as chaves e os modelos dos provedores que deseja utilizar.
+O AgentLab utiliza dois serviços: frontend e backend.
 
-No frontend, configure a URL do backend quando necessário:
+### 1. Iniciar o backend
 
-```env
-BACKEND_URL=http://127.0.0.1:8000
+Dentro da pasta `backend`, com o ambiente virtual ativado:
+
+```bash
+python -m uvicorn webapp:app --reload --host 127.0.0.1 --port 8000
 ```
 
-**Importante:** não compartilhe nem versione arquivos `.env` com chaves de API. As credenciais devem ser mantidas em ambiente seguro.
+A API ficará disponível em:
 
-### 4. Iniciar a aplicação
+```text
+http://127.0.0.1:8000
+```
+
+A documentação interativa da API pode ser acessada em:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+### 2. Iniciar o frontend
 
 Na raiz do projeto:
 
@@ -102,81 +222,85 @@ Na raiz do projeto:
 npm run dev
 ```
 
-O comando inicia os dois serviços:
+A aplicação ficará disponível em:
 
-| Serviço | Endereço |
-|---|---|
-| Frontend — Next.js | http://localhost:3000 |
-| Backend — FastAPI | http://127.0.0.1:8000 |
+```text
+http://localhost:3000
+```
 
-Para encerrar os serviços, pressione `Ctrl + C` no terminal.
+## Gerenciamento de documentos
 
-## Provedores de IA
+Cada agente pode possuir documentos associados à sua base de conhecimento.
 
-O AgentLab possui integração com os seguintes provedores:
+O gerenciamento é realizado pela interface ou pelos endpoints da API.
 
-| Provedor | Identificador |
-|---|---|
-| Google Gemini | `gemini` |
-| OpenAI | `openai` |
-| Anthropic | `anthropic` |
-| Llama | `llama` |
+| Método | Endpoint | Responsabilidade |
+|---|---|---|
+| GET | `/api/agents/{agent_id}/documents` | Lista documentos do agente |
+| POST | `/api/agents/{agent_id}/documents` | Envia documentos |
+| DELETE | `/api/agents/{agent_id}/documents/{document_id}` | Exclui um documento |
+| POST | `/api/agents/{agent_id}/documents/{document_id}/index` | Indexa ou reindexa um documento |
 
-A disponibilidade de cada modelo depende da configuração, das credenciais e do acesso ao serviço correspondente.
+### Status dos documentos
 
-As API Keys informadas para uso na aplicação não devem ser armazenadas junto às configurações dos agentes no `localStorage`.
+Os documentos possuem estados de processamento que permitem acompanhar a indexação:
 
-## Armazenamento de dados
+- `uploaded`: documento enviado e registrado.
+- `processing`: documento em processamento.
+- `indexed`: documento indexado com sucesso.
+- `error`: ocorreu um erro durante o processamento.
 
-Atualmente, as configurações dos agentes são armazenadas no navegador por meio do `localStorage`.
+A indexação individual permite atualizar o conteúdo de um documento sem executar a indexação completa de todos os arquivos da base.
 
-Isso significa que:
-- Os agentes ficam disponíveis no navegador em que foram criados.
-- Os dados não são sincronizados automaticamente entre dispositivos.
-- A limpeza dos dados do navegador pode apagar as configurações salvas.
-- A exportação em JSON permite preservar as configurações dos agentes.
+## Recuperação de informações (RAG)
 
-## Publicação
+O mecanismo RAG utiliza embeddings para representar os documentos em formato vetorial.
 
-### Frontend — Vercel
+Quando o usuário envia uma pergunta, o sistema:
 
-1. Envie o projeto para um repositório Git.
-2. Importe o repositório na Vercel.
-3. Configure o projeto como uma aplicação Next.js.
-4. Defina a variável `BACKEND_URL` apontando para o endereço público do backend.
-5. Execute o deploy.
+1. Converte a consulta em uma representação vetorial.
+2. Busca os chunks semanticamente relevantes.
+3. Recupera o conteúdo associado à consulta.
+4. Incorpora o contexto recuperado ao prompt.
+5. Encaminha o prompt ao modelo de linguagem.
+6. Retorna a resposta gerada pelo agente.
 
-### Backend
+A separação por escopo das bases de conhecimento permite manter o isolamento entre os documentos dos diferentes agentes.
 
-O backend FastAPI precisa ser hospedado separadamente em um serviço compatível com Python.
+## Banco de dados
 
-Após a publicação, configure:
-- URL pública do backend.
-- Variáveis de ambiente.
-- Credenciais dos provedores de IA.
-- Dependências e recursos necessários para execução do RAG.
+O projeto utiliza duas estratégias complementares de armazenamento:
 
-**Atenção:** o endereço `127.0.0.1` é válido apenas para execução local. Em produção, o frontend deve apontar para o endereço público do backend, com comunicação HTTPS e medidas adequadas de autenticação e proteção das credenciais.
+**SQLite**
 
-## Limitações atuais
+Responsável pelos dados estruturados, como:
 
-- Autenticação de usuários ainda não implementada.
-- Persistência dos agentes limitada ao `localStorage`.
-- Sincronização entre dispositivos não implementada.
-- Upload de documentos e gerenciamento de bases de conhecimento ainda em desenvolvimento.
-- Segurança de produção, incluindo autenticação e gerenciamento de credenciais, requer implementação e validação adicionais.
+- Cadastro e configuração dos agentes.
+- Metadados dos documentos.
+- Caminhos dos arquivos.
+- Status de processamento.
+- Informações de gerenciamento.
 
-## Próximas etapas
+**ChromaDB**
 
-1. Definir e documentar o contrato JSON e a API do runtime.
-2. Implementar autenticação e comunicação segura via HTTPS.
-3. Persistir agentes por usuário em um banco de dados.
-4. Implementar importação e gerenciamento de configurações.
-5. Expandir o upload de documentos e as funcionalidades de RAG.
-6. Melhorar o gerenciamento de contexto e histórico das conversas.
-7. Testar navegação mobile, acessibilidade e segurança.
-8. Preparar a aplicação para publicação em ambiente de produção.
+Responsável pelo armazenamento dos embeddings e dos chunks utilizados na recuperação semântica.
 
----
+Cada base individual possui seu próprio diretório de armazenamento vetorial.
 
-**AgentLab — Work Intelligence Summit**
+## Segurança e boas práticas
+
+- Não versione arquivos `.env` ou credenciais.
+- Nunca exponha chaves de API no frontend ou no repositório.
+- Preserve os bancos de dados e documentos utilizados pelo sistema.
+- Mantenha o isolamento entre as bases de conhecimento dos agentes.
+- Valide os arquivos enviados antes do processamento.
+- Monitore os erros de indexação e recuperação.
+- Utilize variáveis de ambiente para configurações sensíveis.
+
+## Objetivo do projeto
+
+Desenvolver uma plataforma modular de agentes inteligentes, capaz de combinar modelos de linguagem com bases documentais próprias por meio de RAG.
+
+O AgentLab busca oferecer flexibilidade na escolha dos provedores de LLM, isolamento das bases de conhecimento, gerenciamento documental e recuperação contextualizada de informações.
+
+A arquitetura permite evoluir para novos recursos, como avaliação de respostas, rastreabilidade das fontes recuperadas, observabilidade, otimização de prompts e treinamento especializado de modelos.
