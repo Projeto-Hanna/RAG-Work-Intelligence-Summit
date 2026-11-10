@@ -1,8 +1,15 @@
 import { NextRequest } from "next/server";
 
-const BACKEND_URL =
-  process.env.BACKEND_URL?.trim().replace(/\/+$/, "") ||
-  "http://127.0.0.1:8000";
+function normalizarBackendUrl(raw?: string): string {
+  const valor = raw?.trim().replace(/\/+$/, "");
+  if (!valor) return "http://127.0.0.1:8000";
+  if (!/^https?:\/\//i.test(valor)) {
+    return `http://${valor}`;
+  }
+  return valor;
+}
+
+const BACKEND_URL = normalizarBackendUrl(process.env.BACKEND_URL);
 const BACKEND_API_TOKEN =
   process.env.BACKEND_API_TOKEN?.trim() || "";
 
