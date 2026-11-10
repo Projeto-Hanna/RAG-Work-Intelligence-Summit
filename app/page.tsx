@@ -172,6 +172,9 @@ function generateId(): string {
 // COMPONENTE PRINCIPAL
 // ======================================================
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const ENABLE_LLAMA =
+  process.env.NEXT_PUBLIC_ENABLE_LLAMA === "true";
 
 function formatarTamanho(bytes: number): string {
   if (bytes < 1024 * 1024) {
@@ -217,9 +220,14 @@ export default function Home() {
   const [documentSuccess, setDocumentSuccess] = useState("");
   const [indexingDocumentId, setIndexingDocumentId] = useState<number | null>(null);
 
-  async function carregarDocumentos(agentId: string) {
-    setIsLoadingDocuments(true);
-    setDocumentError("");
+  async function carregarDocumentos(
+    agentId: string,
+    silencioso = false
+  ) {
+    if (!silencioso) {
+      setIsLoadingDocuments(true);
+      setDocumentError("");
+    }
 
     try {
       const response = await fetch(
@@ -237,97 +245,119 @@ export default function Home() {
 
       setDocuments(data.documentos || []);
     } catch (error) {
-      setDocumentError(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível carregar os documentos."
-      );
+      if (!silencioso) {
+        setDocumentError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível carregar os documentos."
+        );
+      }
     } finally {
-      setIsLoadingDocuments(false);
+      if (!silencioso) {
+        setIsLoadingDocuments(false);
+      }
     }
   }
 
   async function enviarDocumentos(files: FileList | null) {
-  if (!files || !active || files.length === 0) return;
+    if (!files || !active || files.length === 0) return;
 
-  setIsUploadingDocuments(true);
-  setDocumentError("");
-  setDocumentSuccess("");
+    const arquivoAcimaDoLimite = Array.from(files).find(
+      (file) => file.size > MAX_UPLOAD_BYTES
+    );
 
-  try {
-    const formData = new FormData();
+    if (arquivoAcimaDoLimite) {
+      setDocumentError(
+        `O arquivo "${arquivoAcimaDoLimite.name}" excede o limite de 4 MB.`
+      );
+      setDocumentSuccess("");
+      return;
+    }
 
-    Array.from(files).forEach((file) => {
-      formData.append("files", file);
-    });
+    setIsUploadingDocuments(true);
+    setDocumentError("");
+    setDocumentSuccess("");
 
-    const response = await fetch(
-      `/api/agents/${active.id}/documents`,
-      {
-        method: "POST",
-        body: formData,
+    try {
+      const formData = new FormData();
+
+      Array.from(files).forEach((file) => {
+        formData.append("files", file);
+      });
+
+      const response = await fetch(
+        `/api/agents/${active.id}/documents`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.detail || "Erro ao enviar documentos."
+        );
       }
-    );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data.detail || "Erro ao enviar documentos."
+      setDocumentSuccess("Documentos enviados com sucesso!");
+      await carregarDocumentos(active.id);
+    } catch (error) {
+      setDocumentError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível enviar os documentos."
       );
+    } finally {
+      setIsUploadingDocuments(false);
     }
-
-    setDocumentSuccess("Documentos enviados com sucesso!");
-    await carregarDocumentos(active.id);
-  } catch (error) {
-    setDocumentError(
-      error instanceof Error
-        ? error.message
-        : "Não foi possível enviar os documentos."
-    );
-  } finally {
-    setIsUploadingDocuments(false);
   }
-}
 
-async function indexarDocumento(documentId: number) {
-  if (!active || indexingDocumentId !== null) return;
+  async function indexarDocumento(documentId: number) {
+    if (!active || indexingDocumentId !== null) return;
 
-  setIndexingDocumentId(documentId);
-  setDocumentError("");
-  setDocumentSuccess("");
+    setIndexingDocumentId(documentId);
+    setDocumentError("");
+    setDocumentSuccess("");
 
-  try {
-    const response = await fetch(
-      `/api/agents/${active.id}/documents/${documentId}/index`,
-      { method: "POST" }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data.detail || "Erro ao indexar documento."
+    try {
+      const response = await fetch(
+        `/api/agents/${active.id}/documents/${documentId}/index`,
+        { method: "POST" }
       );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.detail || "Erro ao indexar documento."
+        );
+      }
+
+      if (data.status === "processing") {
+        setDocumentSuccess(
+          "Indexação iniciada em segundo plano. O status será atualizado automaticamente."
+        );
+      } else {
+        setDocumentSuccess(
+          `Documento "${data.document_id}" indexado com sucesso!`
+        );
+      }
+
+      await carregarDocumentos(active.id, true);
+    } catch (error) {
+      setDocumentError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível indexar o documento."
+      );
+
+      await carregarDocumentos(active.id, true);
+    } finally {
+      setIndexingDocumentId(null);
     }
-
-    setDocumentSuccess(
-      `Documento "${data.document_id}" indexado com sucesso!`
-    );
-
-    await carregarDocumentos(active.id);
-  } catch (error) {
-    setDocumentError(
-      error instanceof Error
-        ? error.message
-        : "Não foi possível indexar o documento."
-    );
-
-    await carregarDocumentos(active.id);
-  } finally {
-    setIndexingDocumentId(null);
   }
-}
 
   // Provedor de IA
   const [provider, setProvider] = useState<Provider>("gemini");
@@ -431,6 +461,23 @@ useEffect(() => {
 
   return () => window.clearInterval(interval);
 }, []);
+
+// Faz polling automático dos documentos enquanto houver indexação em andamento
+useEffect(() => {
+  if (
+    screen !== "chat" ||
+    !active?.id ||
+    !documents.some((doc) => doc.status === "processing")
+  ) {
+    return;
+  }
+
+  const interval = window.setInterval(() => {
+    carregarDocumentos(active.id, true);
+  }, 2000);
+
+  return () => window.clearInterval(interval);
+}, [screen, active?.id, documents]);
 
 // Controle de atividade e bloqueio automático por agente
 useEffect(() => {
@@ -642,11 +689,7 @@ async function saveAgent() {
         draft.instructions.trim() || makeInstructions(draft),
     };
 
-    if (provider !== "llama") {
-      if (!apiKey.trim()) {
-        throw new Error("Informe a chave de API do provedor.");
-      }
-
+    if (provider !== "llama" && apiKey.trim()) {
       if (credentialPassword.length < 12) {
         throw new Error(
           "A senha deve possuir pelo menos 12 caracteres."
@@ -778,17 +821,13 @@ async function saveAgent() {
 
       const metadata = await getCredentialMetadata(active.id);
 
-      if (!metadata) {
-        throw new Error(
-          "Este agente não possui uma chave cadastrada. Edite o agente e cadastre novamente a chave e a senha."
-        );
+      if (metadata) {
+        setPendingMessage(text);
+        setUnlockPassword("");
+        setUnlockError("");
+        setShowUnlockModal(true);
+        return;
       }
-
-      setPendingMessage(text);
-      setUnlockPassword("");
-      setUnlockError("");
-      setShowUnlockModal(true);
-      return;
     }
 
     await executeMessage(text, null);
@@ -1640,9 +1679,11 @@ async function unlockAndSendMessage() {
                     Anthropic (Claude)
                   </option>
 
-                  <option value="llama">
-                    Llama (Local)
-                  </option>
+                  {ENABLE_LLAMA && (
+                    <option value="llama">
+                      Llama (Local)
+                    </option>
+                  )}
                 </select>
 
                 {provider !== "llama" && (
@@ -1719,7 +1760,7 @@ async function unlockAndSendMessage() {
                 <p className="lead">
                   {provider === "llama"
                     ? "O agente utilizará o modelo Llama configurado no backend. Nenhuma chave de API é necessária."
-                    : "Sua chave de API será criptografada localmente e protegida pela senha definida acima. A senha não será armazenada. Se esquecê-la, será necessário cadastrar uma nova credencial."}
+                    : "Se informada, sua chave de API será criptografada localmente e protegida pela senha definida acima. Se deixar em branco, o backend utilizará a chave padrão configurada no servidor (se disponível)."}
                 </p>
 
               </div>

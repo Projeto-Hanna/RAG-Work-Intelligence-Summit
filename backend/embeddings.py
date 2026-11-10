@@ -6,6 +6,8 @@ vive num módulo só.
 Os modelos E5 foram treinados com prefixos: "passage: " nos textos indexados
 e "query: " nas perguntas. Sem eles a qualidade da busca cai.
 """
+from functools import lru_cache
+
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from config import MODELO_EMBEDDINGS
@@ -19,6 +21,7 @@ class E5Embeddings(HuggingFaceEmbeddings):
         return super().embed_query(f"query: {text}")
 
 
+@lru_cache(maxsize=1)
 def get_embeddings():
     return E5Embeddings(
         model_name=MODELO_EMBEDDINGS,

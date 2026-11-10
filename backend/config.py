@@ -36,8 +36,26 @@ CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 TOP_K = 4
 
-# Provedor padrão
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "llama").lower()
+# Provedor padrão e ambiente de execução
+ENV = os.getenv("ENV", "development").strip().lower()
+IS_PRODUCTION = ENV == "production"
+BACKEND_API_TOKEN = os.getenv("BACKEND_API_TOKEN", "").strip()
+
+_default_providers = (
+    "gemini,openai,anthropic"
+    if IS_PRODUCTION
+    else "gemini,openai,anthropic,llama"
+)
+ENABLED_PROVIDERS = tuple(
+    p.strip().lower()
+    for p in os.getenv("ENABLED_PROVIDERS", _default_providers).split(",")
+    if p.strip()
+)
+
+LLM_PROVIDER = os.getenv(
+    "LLM_PROVIDER",
+    "gemini" if IS_PRODUCTION else "llama",
+).lower()
 
 # Chaves de API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")

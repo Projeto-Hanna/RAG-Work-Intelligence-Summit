@@ -3,6 +3,16 @@ import { NextRequest } from "next/server";
 
 const BACKEND_URL =
   process.env.BACKEND_URL || "http://127.0.0.1:8000";
+const BACKEND_API_TOKEN =
+  process.env.BACKEND_API_TOKEN || "";
+
+export const maxDuration = 60;
+
+function getAuthHeaders(): Record<string, string> {
+  return BACKEND_API_TOKEN
+    ? { "X-Backend-Token": BACKEND_API_TOKEN }
+    : {};
+}
 
 type RouteContext = {
   params: Promise<{ agentId: string }>;
@@ -23,7 +33,10 @@ export async function GET(
 
     const response = await fetch(
       `${BACKEND_URL}/api/agents/${agentId}/documents`,
-      { cache: "no-store" }
+      {
+        headers: getAuthHeaders(),
+        cache: "no-store",
+      }
     );
 
     const data = await response.json();
@@ -50,6 +63,7 @@ export async function POST(
       `${BACKEND_URL}/api/agents/${agentId}/documents`,
       {
         method: "POST",
+        headers: getAuthHeaders(),
         body: formData,
         cache: "no-store",
       }
@@ -86,6 +100,7 @@ export async function DELETE(
       `${BACKEND_URL}/api/agents/${agentId}/documents/${documentId}`,
       {
         method: "DELETE",
+        headers: getAuthHeaders(),
         cache: "no-store",
       }
     );

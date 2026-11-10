@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: agentlab-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - ENV=production
+      - ENABLED_PROVIDERS=gemini,openai,anthropic
+    volumes:
+      - ./backend/database:/app/database
+      - ./backend/data:/app/data
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: 1.5
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+

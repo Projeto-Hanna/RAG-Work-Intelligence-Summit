@@ -1,8 +1,10 @@
 
 const BACKEND_URL =
-  (globalThis as typeof globalThis & {
-    process?: { env?: { BACKEND_URL?: string } };
-  }).process?.env?.BACKEND_URL || "http://127.0.0.1:8000";
+  process.env.BACKEND_URL || "http://127.0.0.1:8000";
+const BACKEND_API_TOKEN =
+  process.env.BACKEND_API_TOKEN || "";
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
@@ -12,6 +14,9 @@ export async function POST(request: Request) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(BACKEND_API_TOKEN
+          ? { "X-Backend-Token": BACKEND_API_TOKEN }
+          : {}),
       },
       body: JSON.stringify(body),
       cache: "no-store",

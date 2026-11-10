@@ -2,6 +2,7 @@
 """Geração com Llama + LoRA, Gemini, OpenAI ou Anthropic."""
 
 from config import (
+    ENABLED_PROVIDERS,
     LLM_PROVIDER,
     GEMINI_API_KEY,
     GEMINI_MODEL,
@@ -35,6 +36,12 @@ class Gerador:
             raise ValueError(
                 f"Provedor inválido: {self.provedor}. "
                 f"Escolha entre: {', '.join(self.PROVEDORES)}."
+            )
+
+        if self.provedor not in ENABLED_PROVIDERS:
+            raise ValueError(
+                f"O provedor '{self.provedor}' está desabilitado neste ambiente. "
+                f"Provedores habilitados: {', '.join(ENABLED_PROVIDERS)}."
             )
 
         if self.provedor == "llama":
@@ -275,15 +282,6 @@ class Gerador:
             contents=historico,
             config=configuracao,
         )
-        
-        print("\n[DEBUG GEMINI] Finish reason:")
-        print(resposta.candidates[0].finish_reason)
-
-        print("\n[DEBUG GEMINI] Usage metadata:")
-        print(resposta.usage_metadata)
-
-        print("\n[DEBUG GEMINI] Prompt feedback:")
-        print(resposta.prompt_feedback)
 
         return (resposta.text or "").strip()
 

@@ -4,11 +4,22 @@
 from pathlib import Path
 from uuid import uuid4
 
-from index import indexar_documento
+from index import (
+    executar_indexacao_documento,
+    remover_documento_vetorizado,
+    validar_documento_para_indexacao,
+)
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    HTTPException,
+    UploadFile,
+)
 
 from database import (
+    atualizar_status_documento,
     conectar,
     cadastrar_agente,
     obter_tipo_base_agente,
@@ -22,7 +33,7 @@ router = APIRouter(
 )
 
 ALLOWED_EXTENSIONS = {".pdf", ".csv", ".xlsx", ".json"}
-MAX_FILE_SIZE = 50 * 1024 * 1024
+MAX_FILE_SIZE = 4 * 1024 * 1024
 CHUNK_SIZE = 1024 * 1024
 
 
@@ -127,7 +138,7 @@ async def enviar_documentos(
                     if tamanho > MAX_FILE_SIZE:
                         raise HTTPException(
                             status_code=413,
-                            detail=f"{nome_original} excede o limite de 50 MB.",
+                            detail=f"{nome_original} excede o limite de 4 MB.",
                         )
 
                     output.write(chunk)
@@ -162,6 +173,8 @@ async def enviar_documentos(
 @router.delete("/{document_id}")
 def excluir_documento(agent_id: str, document_id: int):
     document_agent_id, pasta_documentos = obter_contexto_base(agent_id)
+    tipo_base = obter_tipo_base_agente(agent_id)
+    _, pasta_db = obter_diretorios_base(agent_id, tipo_base)
 
     with conectar() as conexao:
         documento = conexao.execute(
@@ -193,6 +206,17 @@ def excluir_documento(agent_id: str, document_id: int):
                 detail="Não é permitido excluir links simbólicos.",
             )
 
+        try:
+            remover_documento_vetorizado(
+                pasta_db=pasta_db,
+                nome_fonte=caminho.name,
+                escopo_base=document_agent_id,
+            )
+        except Exception as erro:
+            print(
+                f"Aviso: falha ao remover vetores de {caminho.name}: {erro}"
+            )
+
         if caminho.exists():
             caminho.unlink()
 
@@ -203,10 +227,51 @@ def excluir_documento(agent_id: str, document_id: int):
 
     return {"message": "Documento excluído com sucesso."}
 
-@router.post("/{document_id}/index")
-def indexar_documento_api(agent_id: str, document_id: int):
+
+def _tarefa_indexar_background(
+    document_id: int,
+    arquivo_resolvido: Path,
+    pasta_db: Path,
+    escopo_base: str,
+):
     try:
-        return indexar_documento(agent_id, document_id)
+        executar_indexacao_documento(
+            document_id=document_id,
+            arquivo_resolvido=arquivo_resolvido,
+            pasta_db=pasta_db,
+            escopo_base=escopo_base,
+        )
+    except Exception:
+        # O status 'error' já é atualizado em executar_indexacao_documento.
+        pass
+
+
+@router.post("/{document_id}/index", status_code=202)
+def indexar_documento_api(
+    agent_id: str,
+    document_id: int,
+    background_tasks: BackgroundTasks,
+):
+    try:
+        arquivo_resolvido, pasta_db, escopo_base = (
+            validar_documento_para_indexacao(agent_id, document_id)
+        )
+
+        atualizar_status_documento(document_id, "processing")
+
+        background_tasks.add_task(
+            _tarefa_indexar_background,
+            document_id,
+            arquivo_resolvido,
+            pasta_db,
+            escopo_base,
+        )
+
+        return {
+            "message": "Indexação iniciada em segundo plano.",
+            "document_id": document_id,
+            "status": "processing",
+        }
 
     except ValueError as erro:
         raise HTTPException(

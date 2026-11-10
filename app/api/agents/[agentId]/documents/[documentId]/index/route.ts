@@ -2,6 +2,10 @@ import { NextRequest } from "next/server";
 
 const BACKEND_URL =
   process.env.BACKEND_URL || "http://127.0.0.1:8000";
+const BACKEND_API_TOKEN =
+  process.env.BACKEND_API_TOKEN || "";
+
+export const maxDuration = 60;
 
 type RouteContext = {
   params: Promise<{
@@ -28,6 +32,9 @@ export async function POST(
       `${BACKEND_URL}/api/agents/${encodeURIComponent(agentId)}/documents/${documentId}/index`,
       {
         method: "POST",
+        headers: BACKEND_API_TOKEN
+          ? { "X-Backend-Token": BACKEND_API_TOKEN }
+          : undefined,
         cache: "no-store",
       }
     );

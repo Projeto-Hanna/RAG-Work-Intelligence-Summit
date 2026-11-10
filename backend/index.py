@@ -112,8 +112,11 @@ def criar_db(agent_id: str):
 
     print("Indexação concluída com sucesso.")
 
-def indexar_documento(agent_id: str, document_id: int):
-    """Indexa individualmente um documento cadastrado."""
+def validar_documento_para_indexacao(
+    agent_id: str,
+    document_id: int,
+) -> tuple[Path, Path, str]:
+    """Valida se o documento existe e pertence à pasta autorizada do agente."""
 
     tipo_base = obter_tipo_base_agente(agent_id)
 
@@ -153,9 +156,16 @@ def indexar_documento(agent_id: str, document_id: int):
     if arquivo_resolvido.suffix.lower() not in EXTENSOES_SUPORTADAS:
         raise ValueError("Extensão de arquivo não suportada.")
 
-    escopo_base = agente_documentos_id
+    return arquivo_resolvido, pasta_db, agente_documentos_id
 
-    atualizar_status_documento(document_id, "processing")
+
+def executar_indexacao_documento(
+    document_id: int,
+    arquivo_resolvido: Path,
+    pasta_db: Path,
+    escopo_base: str,
+):
+    """Executa a extração, chunking e vetorização atualizando o status no SQLite."""
 
     try:
         documentos = carregar_arquivo(arquivo_resolvido)
@@ -178,9 +188,59 @@ def indexar_documento(agent_id: str, document_id: int):
             "status": "indexed",
         }
 
-    except Exception:
+    except Exception as erro:
+        print(f"Erro ao indexar documento {document_id}: {erro}")
         atualizar_status_documento(document_id, "error")
         raise
+
+
+def indexar_documento(agent_id: str, document_id: int):
+    """Indexa individualmente um documento cadastrado."""
+
+    arquivo_resolvido, pasta_db, escopo_base = (
+        validar_documento_para_indexacao(agent_id, document_id)
+    )
+
+    atualizar_status_documento(document_id, "processing")
+
+    return executar_indexacao_documento(
+        document_id=document_id,
+        arquivo_resolvido=arquivo_resolvido,
+        pasta_db=pasta_db,
+        escopo_base=escopo_base,
+    )
+
+
+def remover_documento_vetorizado(
+    pasta_db: Path,
+    nome_fonte: str,
+    escopo_base: str,
+):
+    """Remove os vetores de um arquivo excluído do ChromaDB."""
+
+    if not (pasta_db / "chroma.sqlite3").is_file():
+        return
+
+    embeddings = get_embeddings()
+
+    db = Chroma(
+        persist_directory=str(pasta_db),
+        embedding_function=embeddings,
+        collection_name="langchain",
+    )
+
+    filtro = {
+        "$and": [
+            {"source": {"$eq": nome_fonte}},
+            {"base_scope": {"$eq": escopo_base}},
+        ]
+    }
+
+    db.delete(where=filtro)
+
+    from retriever import carregar_db
+
+    carregar_db.cache_clear()
 
 def carregar_arquivo(arquivo: Path):
     """Carrega individualmente um arquivo compatível."""
@@ -667,6 +727,10 @@ def vetorizar_chunks(chunks, pasta_db: Path, escopo_base: str):
                 f"Falha ao atualizar '{fonte}'. "
                 "Os registros anteriores foram restaurados."
             ) from erro
+
+    from retriever import carregar_db
+
+    carregar_db.cache_clear()
 
     print(f"Banco vetorial atualizado em: {pasta_db}")
 

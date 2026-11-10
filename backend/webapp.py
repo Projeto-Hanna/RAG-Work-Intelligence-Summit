@@ -1,26 +1,82 @@
 
 import json
-
-from api.documents import router as documents_router
-from database import inicializar_banco
+import secrets
 from functools import lru_cache
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from config import ARQUIVO_EXEMPLOS
-from upload import router as upload_router
 from api.agents import router as agents_router
+from api.documents import router as documents_router
+from config import (
+    ARQUIVO_EXEMPLOS,
+    BACKEND_API_TOKEN,
+    ENABLED_PROVIDERS,
+    ENV,
+    IS_PRODUCTION,
+)
+from database import inicializar_banco
+from embeddings import get_embeddings
+from upload import router as upload_router
 
-app = FastAPI(title="RAG Post Studio")
+
+def verificar_token_backend(
+    x_backend_token: str | None = Header(default=None),
+):
+    """Valida o token compartilhado entre a Vercel e o backend."""
+
+    if not BACKEND_API_TOKEN:
+        return
+
+    if not x_backend_token or not secrets.compare_digest(
+        x_backend_token,
+        BACKEND_API_TOKEN,
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Acesso não autorizado ao backend.",
+        )
+
+
+app = FastAPI(
+    title="RAG Post Studio",
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
+)
+
 
 @app.on_event("startup")
-def iniciar_banco():
-  inicializar_banco()
-app.include_router(upload_router)
-app.include_router(agents_router)
-app.include_router(documents_router)
+def iniciar_servicos():
+    inicializar_banco()
+    # Pré-carrega o modelo de embeddings em memória no boot do container
+    # para evitar cold start na primeira requisição.
+    get_embeddings()
+
+
+@app.get("/health")
+def healthcheck():
+    return {
+        "status": "ok",
+        "env": ENV,
+        "enabled_providers": list(ENABLED_PROVIDERS),
+    }
+
+
+dependencias_protegidas = [Depends(verificar_token_backend)]
+
+app.include_router(
+    agents_router,
+    dependencies=dependencias_protegidas,
+)
+app.include_router(
+    documents_router,
+    dependencies=dependencias_protegidas,
+)
+
+if not IS_PRODUCTION:
+    app.include_router(upload_router)
 
 @lru_cache(maxsize=2)
 def obter_pipeline(usar_lora: bool):
@@ -56,54 +112,55 @@ def salvar_exemplo(tema, trechos, post):
         arquivo.write(json.dumps(registro, ensure_ascii=False) + "\n")
 
 
-@app.get("/", response_class=HTMLResponse)
-def home():
-    return HTML
+if not IS_PRODUCTION:
+    @app.get("/", response_class=HTMLResponse)
+    def home():
+        return HTML
 
 
-@app.post("/api/gerar")
-def gerar(request: GeracaoRequest):
-    tema = request.tema.strip()
+    @app.post("/api/gerar")
+    def gerar(request: GeracaoRequest):
+        tema = request.tema.strip()
 
-    if not tema:
-        raise HTTPException(400, "Informe um tema.")
+        if not tema:
+            raise HTTPException(400, "Informe um tema.")
 
-    try:
-        resultado = obter_pipeline(request.usar_lora).gerar(tema)
+        try:
+            resultado = obter_pipeline(request.usar_lora).gerar(tema)
 
-        return {
-            "tema": tema,
-            "post": resultado.get("post", ""),
-            "trechos": resultado.get("trechos", []),
-            "fontes": resultado.get("fontes", []),
-            "avisos": resultado.get("avisos", []),
-            "ok": resultado.get("ok", False),
-        }
-    except Exception as erro:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Falha na geração: {erro}",
-        ) from erro
+            return {
+                "tema": tema,
+                "post": resultado.get("post", ""),
+                "trechos": resultado.get("trechos", []),
+                "fontes": resultado.get("fontes", []),
+                "avisos": resultado.get("avisos", []),
+                "ok": resultado.get("ok", False),
+            }
+        except Exception as erro:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Falha na geração: {erro}",
+            ) from erro
 
 
-@app.post("/api/revisar")
-def revisar(request: RevisaoRequest):
-    if request.acao not in {"aprovar", "editar"}:
-        raise HTTPException(400, "Ação inválida.")
+    @app.post("/api/revisar")
+    def revisar(request: RevisaoRequest):
+        if request.acao not in {"aprovar", "editar"}:
+            raise HTTPException(400, "Ação inválida.")
 
-    if not request.tema.strip() or not request.post.strip():
-        raise HTTPException(400, "Tema e post são obrigatórios.")
+        if not request.tema.strip() or not request.post.strip():
+            raise HTTPException(400, "Tema e post são obrigatórios.")
 
-    if len(request.post) > 100_000:
-        raise HTTPException(400, "O texto é muito grande.")
+        if len(request.post) > 100_000:
+            raise HTTPException(400, "O texto é muito grande.")
 
-    salvar_exemplo(
-        request.tema.strip(),
-        request.trechos,
-        request.post.strip(),
-    )
+        salvar_exemplo(
+            request.tema.strip(),
+            request.trechos,
+            request.post.strip(),
+        )
 
-    return {"message": "Exemplo salvo em exemplos.jsonl."}
+        return {"message": "Exemplo salvo em exemplos.jsonl."}
 
 
 HTML = r"""
