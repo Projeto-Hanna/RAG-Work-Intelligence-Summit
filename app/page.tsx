@@ -1596,11 +1596,9 @@ async function unlockAndSendMessage() {
                   />
                 </label>
 
-              </div>
-
-              {/* SELEÇÃO DO PROVEDOR */}
-              <div className="form-group">
-                <label htmlFor="knowledgeBaseType">Base de conhecimento</label>
+                <label htmlFor="knowledgeBaseType">
+                  Base de conhecimento
+                </label>
 
                 <select
                   id="knowledgeBaseType"
@@ -1615,8 +1613,10 @@ async function unlockAndSendMessage() {
                   <option value="test">Base compartilhada de teste</option>
                   <option value="custom">Base própria do agente</option>
                 </select>
+
               </div>
 
+              {/* SELEÇÃO DO PROVEDOR */}
               <div className="form-card">
 
                 <label htmlFor="provider">

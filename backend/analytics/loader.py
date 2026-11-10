@@ -1,9 +1,38 @@
 
 """Carregamento de arquivos estruturados para análises."""
 
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
+
+
+@lru_cache(maxsize=8)
+def _carregar_arquivo_cached(
+    caminho_resolvido: str,
+    _mtime_ns: int,
+    _tamanho: int,
+) -> dict[str, pd.DataFrame]:
+    """Lê do disco e faz parsing dos DataFrames mantendo em cache LRU."""
+
+    arquivo = Path(caminho_resolvido)
+    extensao = arquivo.suffix.lower()
+
+    if extensao == ".csv":
+        return carregar_csv(arquivo)
+
+    if extensao == ".xlsx":
+        return carregar_xlsx(arquivo)
+
+    raise ValueError(
+        f"Formato não suportado para análise: {extensao}"
+    )
+
+
+def limpar_cache_arquivos() -> None:
+    """Descarta os DataFrames em cache (ex.: após excluir um documento)."""
+
+    _carregar_arquivo_cached.cache_clear()
 
 
 def detectar_separador(arquivo: Path) -> tuple[str, str]:
@@ -86,21 +115,30 @@ def carregar_xlsx(arquivo: Path) -> dict[str, pd.DataFrame]:
 
 
 def carregar_arquivo(arquivo: str | Path) -> dict[str, pd.DataFrame]:
-    """Carrega um CSV ou XLSX e retorna seus DataFrames."""
+    """Carrega um CSV ou XLSX com cache por mtime e retorna cópias seguras."""
 
-    arquivo = Path(arquivo)
+    arquivo_path = Path(arquivo)
 
-    if not arquivo.is_file():
-        raise FileNotFoundError(f"Arquivo não encontrado: {arquivo}")
+    if not arquivo_path.is_file():
+        raise FileNotFoundError(f"Arquivo não encontrado: {arquivo_path}")
 
-    extensao = arquivo.suffix.lower()
+    extensao = arquivo_path.suffix.lower()
+    if extensao not in {".csv", ".xlsx"}:
+        raise ValueError(
+            f"Formato não suportado para análise: {extensao}"
+        )
 
-    if extensao == ".csv":
-        return carregar_csv(arquivo)
+    stat = arquivo_path.stat()
+    caminho_resolvido = str(arquivo_path.resolve())
 
-    if extensao == ".xlsx":
-        return carregar_xlsx(arquivo)
-
-    raise ValueError(
-        f"Formato não suportado para análise: {extensao}"
+    tabelas_cached = _carregar_arquivo_cached(
+        caminho_resolvido,
+        stat.st_mtime_ns,
+        stat.st_size,
     )
+
+    # Retorna cópias defensivas para proteger os DataFrames originais no cache
+    return {
+        nome: df.copy()
+        for nome, df in tabelas_cached.items()
+    }

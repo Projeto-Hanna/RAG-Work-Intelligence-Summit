@@ -63,12 +63,24 @@ REGRAS:
         }
     ]
 
-    # Adiciona o histórico anterior.
-    for item in historico:
+    # Janela deslizante: mantém até as últimas 50 mensagens do histórico
+    historico_recente = historico[-50:] if len(historico) > 40 else historico
+
+    # Adiciona o histórico anterior. O histórico enviado ao LLM precisa
+    # começar por uma mensagem do usuário (exigência da API Anthropic),
+    # então mensagens do assistente no início da janela são descartadas.
+    encontrou_usuario = False
+
+    for item in historico_recente:
         papel = item.get("role")
         conteudo = item.get("content", "").strip()
 
         if papel in ("user", "assistant") and conteudo:
+            if papel == "user":
+                encontrou_usuario = True
+            elif not encontrou_usuario:
+                continue
+
             mensagens.append({
                 "role": papel,
                 "content": conteudo,

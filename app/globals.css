@@ -318,6 +318,11 @@ h1 {
   gap: 17px
 }
 
+.agent-card {
+  display: flex;
+  flex-direction: column;
+}
+
 .agent-card,
 .new-card,
 .form-card,
@@ -326,6 +331,10 @@ h1 {
   border: 1px solid #303b5a;
   border-radius: 19px;
   padding: 24px
+}
+
+.review-card + .form-card {
+  margin-top: 20px;
 }
 
 .agent-avatar {
@@ -347,33 +356,69 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 21px;
+  margin-top: auto;
+  padding-top: 18px;
   width: 100%;
 }
 
 .card-actions .secondary {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 12px 9px;
-  font-size: 12px;
-  gap: 5px;
+  padding: 10px 12px;
+  font-size: 13px;
+  gap: 6px;
   justify-content: center;
   white-space: nowrap;
-  border-radius: 9px;
+  border-radius: 10px;
 }
 
 .card-actions .secondary svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 
 .icon-button {
   border: 1px solid #384667;
-  border-radius: 11px;
+  border-radius: 10px;
   background: #222d49;
   color: #a9b5cf;
-  padding: 12px
+  padding: 10px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.icon-button:hover {
+  background: #2c395a;
+  color: #f8fafc;
+  border-color: #4a5c84;
+}
+
+.card-actions .icon-button {
+  flex-shrink: 0;
+  padding: 10px;
+}
+
+.card-actions .icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 420px) {
+  .card-actions {
+    flex-wrap: wrap;
+  }
+
+  .card-actions .secondary {
+    flex: 1 1 100%;
+  }
+
+  .card-actions .icon-button {
+    flex: 1 1 100%;
+  }
 }
 
 .new-card {
@@ -1062,30 +1107,22 @@ textarea::placeholder {
 
 .api-key-field {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 10px;
   margin-top: 9px;
+  width: 100%;
 }
 
 .api-key-field input {
   margin-top: 0;
   flex: 1;
+  min-width: 0;
 }
 
-.form-group {
-  margin-top: 18px;
-}
-
-.form-group label {
-  display: block;
-  font-size: 13px;
-  color: #c5cfe4;
-  font-weight: 700;
-  margin-bottom: 9px;
-}
-
-.form-group select {
-  margin-top: 0;
+.api-key-field .icon-button {
+  padding: 0 16px;
+  border-radius: 12px;
+  flex-shrink: 0;
 }
 
 .workspace {

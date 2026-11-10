@@ -1,6 +1,8 @@
 
 """Rotas para gerenciamento de documentos dos agentes."""
 
+import logging
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -26,6 +28,9 @@ from database import (
     registrar_documento,
 )
 from knowledge_base import obter_diretorios_base
+from analytics.loader import limpar_cache_arquivos
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/agents/{agent_id}/documents",
@@ -112,13 +117,18 @@ async def enviar_documentos(
     resultados = []
 
     for file in files:
-        nome_original = Path(file.filename or "").name
+        nome_bruto = Path(file.filename or "").name
+        nome_original = re.sub(r"[\x00-\x1f\x7f]", "", nome_bruto).strip()
         extensao = Path(nome_original).suffix.lower()
 
-        if not nome_original or extensao not in ALLOWED_EXTENSIONS:
+        if (
+            not nome_original
+            or len(nome_original.encode("utf-8")) > 180
+            or extensao not in ALLOWED_EXTENSIONS
+        ):
             raise HTTPException(
                 status_code=400,
-                detail=f"Arquivo não permitido: {nome_original}",
+                detail=f"Arquivo não permitido: {nome_original or 'sem nome'}",
             )
 
         nome_armazenado = f"{uuid4().hex}_{nome_original}"
@@ -220,6 +230,9 @@ def excluir_documento(agent_id: str, document_id: int):
         if caminho.exists():
             caminho.unlink()
 
+        # Libera os DataFrames do arquivo excluído mantidos em cache.
+        limpar_cache_arquivos()
+
         conexao.execute(
             "DELETE FROM documents WHERE id = ?",
             (document_id,),
@@ -285,8 +298,13 @@ def indexar_documento_api(
             detail=str(erro),
         )
 
-    except Exception as erro:
+    except Exception:
+        logger.exception(
+            "Erro inesperado ao indexar documento %s do agente %s.",
+            document_id,
+            agent_id,
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao indexar documento: {erro}",
+            detail="Erro interno ao iniciar a indexação do documento.",
         )

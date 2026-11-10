@@ -1,6 +1,7 @@
 
 import json
 import secrets
+from contextlib import asynccontextmanager
 from functools import lru_cache
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -39,20 +40,22 @@ def verificar_token_backend(
         )
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    inicializar_banco()
+    # Pré-carrega o modelo de embeddings em memória no boot do container
+    # para evitar cold start na primeira requisição.
+    get_embeddings()
+    yield
+
+
 app = FastAPI(
     title="RAG Post Studio",
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
     openapi_url=None if IS_PRODUCTION else "/openapi.json",
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-def iniciar_servicos():
-    inicializar_banco()
-    # Pré-carrega o modelo de embeddings em memória no boot do container
-    # para evitar cold start na primeira requisição.
-    get_embeddings()
 
 
 @app.get("/health")

@@ -4,10 +4,13 @@ from typing import Literal
 from pydantic import BaseModel, Field, SecretStr
 
 
+AGENT_ID_PATTERN = r"^[a-zA-Z0-9_-]+$"
+
+
 class AgentConfig(BaseModel):
     """Configurações de um agente criado no AgentLab."""
 
-    id: str = Field(min_length=1)
+    id: str = Field(min_length=1, max_length=100, pattern=AGENT_ID_PATTERN)
     name: str = Field(min_length=1, max_length=100)
     purpose: str = Field(min_length=1, max_length=500)
     tone: str = Field(min_length=1, max_length=200)
@@ -34,6 +37,6 @@ class ChatRequest(BaseModel):
     api_key: SecretStr | None = None
 
 class AgentRegistration(BaseModel):
-    id: str = Field(min_length=1)
+    id: str = Field(min_length=1, max_length=100, pattern=AGENT_ID_PATTERN)
     name: str = Field(min_length=1, max_length=100)
     knowledge_base_type: Literal["test", "custom"] = "test"

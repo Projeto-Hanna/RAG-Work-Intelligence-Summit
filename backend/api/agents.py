@@ -55,9 +55,10 @@ def conversar(request: ChatRequest):
         return resultado
 
     except FileNotFoundError as erro:
+        logger.warning("Base de conhecimento indisponível: %s", erro)
         raise HTTPException(
             status_code=503,
-            detail=f"Base de conhecimento indisponível: {erro}",
+            detail="Base de conhecimento indisponível. Indexe os documentos primeiro.",
         )
 
     except ValueError as erro:
