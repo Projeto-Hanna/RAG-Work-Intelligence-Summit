@@ -81,10 +81,10 @@ export default function AnalyticsReportView({ report }: Props) {
             <div className="analytics-chart-container">
               <ResponsiveContainer width="100%" height="100%">
                 {chart.type === "bar" ? (
-                  <BarChart data={data}>
+                  <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#303b5a" />
-                    <XAxis dataKey="label" stroke="#a9b5cf" />
-                    <YAxis stroke="#a9b5cf" />
+                    <XAxis dataKey="label" stroke="#a9b5cf" tick={{ fontSize: 11 }} />
+                    <YAxis stroke="#a9b5cf" tick={{ fontSize: 11 }} />
                     <Tooltip
                       contentStyle={{
                         background: "#171e3b",
@@ -100,10 +100,10 @@ export default function AnalyticsReportView({ report }: Props) {
                     />
                   </BarChart>
                 ) : (
-                  <LineChart data={data}>
+                  <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#303b5a" />
-                    <XAxis dataKey="label" stroke="#a9b5cf" />
-                    <YAxis stroke="#a9b5cf" />
+                    <XAxis dataKey="label" stroke="#a9b5cf" tick={{ fontSize: 11 }} />
+                    <YAxis stroke="#a9b5cf" tick={{ fontSize: 11 }} />
                     <Tooltip
                       contentStyle={{
                         background: "#171e3b",

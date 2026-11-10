@@ -4,8 +4,10 @@ import {
   saveCredential,
   getCredentialMetadata,
   unlockCredential,
+  deleteCredential,
 } from "../lib/credential-vault";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import dynamic from "next/dynamic";
 import {
   Bot,
   Plus,
@@ -28,7 +30,10 @@ import {
   LockKeyhole,
 } from "lucide-react";
 
-import AnalyticsReportView from "./components/AnalyticsReportView";
+const AnalyticsReportView = dynamic(
+  () => import("./components/AnalyticsReportView"),
+  { ssr: false }
+);
 
 
 
@@ -197,6 +202,8 @@ function formatarData(data: string): string {
 export default function Home() {
   // Navegação
   const [screen, setScreen] = useState<Screen>("home");
+  const [originScreen, setOriginScreen] = useState<"guided" | "manual" | "chat">("guided");
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Agentes
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -390,11 +397,14 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const savedAgents = JSON.parse(
-        localStorage.getItem("agentlab-agents") || "[]"
-      );
+      const raw = localStorage.getItem("agentlab-agents");
+      const savedAgents = raw ? JSON.parse(raw) : [];
 
-      setAgents(savedAgents);
+      if (Array.isArray(savedAgents)) {
+        setAgents(savedAgents);
+      } else {
+        setAgents([]);
+      }
     } catch {
       setAgents([]);
     }
@@ -422,26 +432,30 @@ export default function Home() {
         "unlocked" | "locked" | "missing" | "local"
       > = {};
 
-      for (const agent of agents) {
+      const pendingChecks = agents.map(async (agent) => {
         const agentProvider = agent.provider ?? "gemini";
 
         if (agentProvider === "llama") {
-          statuses[agent.id] = "local";
-          continue;
+          return { id: agent.id, status: "local" as const };
         }
 
-        if (
-          unlockedCredentials[agent.id]?.provider === agentProvider
-        ) {
-          statuses[agent.id] = "unlocked";
-          continue;
+        if (unlockedCredentials[agent.id]?.provider === agentProvider) {
+          return { id: agent.id, status: "unlocked" as const };
         }
 
         const metadata = await getCredentialMetadata(agent.id);
-        statuses[agent.id] = metadata ? "locked" : "missing";
-      }
+        return {
+          id: agent.id,
+          status: metadata ? ("locked" as const) : ("missing" as const),
+        };
+      });
+
+      const results = await Promise.all(pendingChecks);
 
       if (!cancelled) {
+        for (const res of results) {
+          statuses[res.id] = res.status;
+        }
         setCredentialStatus(statuses);
       }
     }
@@ -453,116 +467,60 @@ export default function Home() {
     };
   }, [agents, unlockedCredentials]);
 
-// Atualiza o relógio a cada segundo
-useEffect(() => {
-  const interval = window.setInterval(() => {
-    setClockNow(Date.now());
-  }, 1000);
+  // Atualiza o relógio a cada segundo apenas quando necessário
+  const hasUnlockedCredentials = Object.keys(unlockedCredentials).length > 0;
+  useEffect(() => {
+    if (screen !== "home" || !hasUnlockedCredentials) return;
 
-  return () => window.clearInterval(interval);
-}, []);
+    const interval = window.setInterval(() => {
+      setClockNow(Date.now());
+    }, 1000);
 
-// Faz polling automático dos documentos enquanto houver indexação em andamento
-useEffect(() => {
-  if (
-    screen !== "chat" ||
-    !active?.id ||
-    !documents.some((doc) => doc.status === "processing")
-  ) {
-    return;
-  }
+    return () => window.clearInterval(interval);
+  }, [screen, hasUnlockedCredentials]);
 
-  const interval = window.setInterval(() => {
-    carregarDocumentos(active.id, true);
-  }, 2000);
+  // Rola automaticamente para o fim da conversa ao receber ou enviar mensagens
+  useEffect(() => {
+    if (screen === "chat") {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isSending, screen]);
 
-  return () => window.clearInterval(interval);
-}, [screen, active?.id, documents]);
+  // Faz polling automático dos documentos enquanto houver indexação em andamento
+  useEffect(() => {
+    if (
+      (screen !== "chat" && screen !== "documents") ||
+      !active?.id ||
+      !documents.some((doc) => doc.status === "processing")
+    ) {
+      return;
+    }
 
-// Controle de atividade e bloqueio automático por agente
-useEffect(() => {
-  const agentId = active?.id;
+    const interval = window.setInterval(() => {
+      carregarDocumentos(active.id, true);
+    }, 2000);
 
-  const registerActivity = () => {
-    if (!agentId || !unlockedCredentials[agentId]) return;
+    return () => window.clearInterval(interval);
+  }, [screen, active?.id, documents]);
 
-    setLastActivityByAgent((previous) => ({
-      ...previous,
-      [agentId]: Date.now(),
-    }));
-  };
+  // Controle de atividade e bloqueio automático por agente com throttle
+  const lastThrottleRef = useRef<number>(0);
 
-  window.addEventListener("pointerdown", registerActivity);
-  window.addEventListener("keydown", registerActivity);
-  window.addEventListener("touchstart", registerActivity);
-  window.addEventListener("wheel", registerActivity);
-
-  const unlockedIds = Object.keys(unlockedCredentials);
-
-  const expirationTimes = unlockedIds.map((id) => {
-    const lastActivity = lastActivityByAgent[id] ?? Date.now();
-    return lastActivity + IDLE_TIMEOUT_MS;
-  });
-
-  if (expirationTimes.length > 0) {
-    const nextExpiration = Math.min(...expirationTimes);
-
-    const timeout = window.setTimeout(() => {
-      const now = Date.now();
-
-      const expiredIds = Object.keys(unlockedCredentials).filter((id) => {
-        const lastActivity = lastActivityByAgent[id] ?? now;
-        return now - lastActivity >= IDLE_TIMEOUT_MS;
-      });
-
-      if (expiredIds.length > 0) {
-        setUnlockedCredentials((previous) => {
-          const updated = { ...previous };
-          expiredIds.forEach((id) => delete updated[id]);
-          return updated;
-        });
-
-        setLastActivityByAgent((previous) => {
-          const updated = { ...previous };
-          expiredIds.forEach((id) => delete updated[id]);
-          return updated;
-        });
-
-        if (agentId && expiredIds.includes(agentId)) {
-          setSessionNotice(
-            "Credencial bloqueada por inatividade. Desbloqueie novamente para continuar."
-          );
-        }
-      }
-    }, Math.max(nextExpiration - Date.now(), 0));
-
-    return () => {
-      window.removeEventListener("pointerdown", registerActivity);
-      window.removeEventListener("keydown", registerActivity);
-      window.removeEventListener("touchstart", registerActivity);
-      window.removeEventListener("wheel", registerActivity);
-      window.clearTimeout(timeout);
-    };
-  }
-
-  return () => {
-    window.removeEventListener("pointerdown", registerActivity);
-    window.removeEventListener("keydown", registerActivity);
-    window.removeEventListener("touchstart", registerActivity);
-    window.removeEventListener("wheel", registerActivity);
-  };
-}, [active?.id, unlockedCredentials, lastActivityByAgent]);
-
-// Controle de atividade e bloqueio automático por agente
-useEffect(() => {
+  useEffect(() => {
     const agentId = active?.id;
 
     const registerActivity = () => {
       if (!agentId || !unlockedCredentials[agentId]) return;
 
+      const now = Date.now();
+      if (now - lastThrottleRef.current < 5000) {
+        return;
+      }
+      lastThrottleRef.current = now;
+
       setLastActivityByAgent((previous) => ({
         ...previous,
-        [agentId]: Date.now(),
+        [agentId]: now,
       }));
     };
 
@@ -574,8 +532,8 @@ useEffect(() => {
     const unlockedIds = Object.keys(unlockedCredentials);
 
     const expirationTimes = unlockedIds.map((id) => {
-      const lastActivity = lastActivityByAgent[id];
-      return (lastActivity || Date.now()) + IDLE_TIMEOUT_MS;
+      const lastActivity = lastActivityByAgent[id] ?? Date.now();
+      return lastActivity + IDLE_TIMEOUT_MS;
     });
 
     if (expirationTimes.length > 0) {
@@ -585,7 +543,7 @@ useEffect(() => {
         const now = Date.now();
 
         const expiredIds = Object.keys(unlockedCredentials).filter((id) => {
-          const lastActivity = lastActivityByAgent[id] || now;
+          const lastActivity = lastActivityByAgent[id] ?? now;
           return now - lastActivity >= IDLE_TIMEOUT_MS;
         });
 
@@ -640,6 +598,7 @@ useEffect(() => {
     setCredentialPassword("");
     setShowApiKey(false);
 
+    setOriginScreen(mode);
     setScreen(mode);
   }
 
@@ -1247,8 +1206,14 @@ async function unlockAndSendMessage() {
                         <button
                           className="icon-button"
                           aria-label={`Excluir ${agent.name}`}
-                          onClick={() => {
+                          onClick={async () => {
                             if (confirm(`Excluir ${agent.name}?`)) {
+                              try {
+                                await deleteCredential(agent.id);
+                              } catch (err) {
+                                console.warn("Falha ao remover credencial no vault:", err);
+                              }
+
                               setAgents((previous) =>
                                 previous.filter((item) => item.id !== agent.id)
                               );
@@ -1476,7 +1441,7 @@ async function unlockAndSendMessage() {
 
               <button
                 className="back"
-                onClick={() => setScreen("choose")}
+                onClick={() => setScreen(originScreen === "chat" ? "chat" : "choose")}
               >
                 <ArrowLeft size={17} />
                 Voltar
@@ -1583,7 +1548,7 @@ async function unlockAndSendMessage() {
 
               <button
                 className="back"
-                onClick={() => setScreen("guided")}
+                onClick={() => setScreen(originScreen === "manual" ? "manual" : "guided")}
               >
                 <ArrowLeft size={17} />
                 Voltar
@@ -1871,6 +1836,7 @@ async function unlockAndSendMessage() {
                   className="secondary"
                   onClick={() => {
                     setDraft(active);
+                    setOriginScreen("chat");
                     setScreen("manual");
                   }}
                 >
@@ -1885,6 +1851,17 @@ async function unlockAndSendMessage() {
                   <Download size={16} />
                   Exportar
                 </button>
+
+                {unlockedCredentials[active.id] && (
+                  <button
+                    className="secondary"
+                    onClick={lockCredentials}
+                    title="Bloquear credenciais deste agente"
+                  >
+                    <LockKeyhole size={16} />
+                    Bloquear
+                  </button>
+                )}
 
               </div>
 
@@ -1940,6 +1917,7 @@ async function unlockAndSendMessage() {
                   </div>
                 )}
 
+                <div ref={messagesEndRef} />
               </div>
 
               <form
@@ -2013,6 +1991,10 @@ async function unlockAndSendMessage() {
                 />
 
                 {isUploadingDocuments && (
+                  <p className="success">Enviando documentos...</p>
+                )}
+
+                {documentSuccess && !isUploadingDocuments && (
                   <p className="success">{documentSuccess}</p>
                 )}
               </div>
@@ -2099,16 +2081,6 @@ async function unlockAndSendMessage() {
               )}
             </section>
           )}
-
-          <button
-            className="secondary"
-            onClick={lockCredentials}
-            disabled={!active || !unlockedCredentials[active.id]}
-            title="Bloquear todas as credenciais desta sessão"
-          >
-            <LockKeyhole size={16} />
-            Bloquear
-          </button>
 
           {/* ============================================
               EXPORTAÇÃO
@@ -2269,22 +2241,26 @@ async function unlockAndSendMessage() {
 
       <nav className="mobile-nav">
 
-        <button onClick={() => setScreen("home")}>
+        <button
+          className={screen === "home" ? "active" : ""}
+          onClick={() => setScreen("home")}
+        >
           <House size={20} />
           <span>Início</span>
         </button>
 
-        <button onClick={() => setScreen("home")}>
-          <Bot size={20} />
-          <span>Agentes</span>
-        </button>
-
-        <button onClick={() => setScreen("choose")}>
+        <button
+          className={["choose", "guided", "manual", "review"].includes(screen) ? "active" : ""}
+          onClick={() => setScreen("choose")}
+        >
           <Plus size={20} />
           <span>Criar</span>
         </button>
 
-        <button onClick={() => setScreen("connection")}>
+        <button
+          className={screen === "connection" ? "active" : ""}
+          onClick={() => setScreen("connection")}
+        >
           <Wifi size={20} />
           <span>Ambiente</span>
         </button>
